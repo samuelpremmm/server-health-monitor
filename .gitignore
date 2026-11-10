@@ -5,3 +5,9 @@ venv/
 logs/*.log
 logs/*.log.*
 logs/*.jsonl
+
+# Maven / CI build output
+target/
+.coverage
+coverage.xml
+.scannerwork/

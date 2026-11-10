@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Builds server-health-monitor-<version>-dist.zip: everything needed to run the tool on a Linux server. -->
+<assembly xmlns="http://maven.apache.org/ASSEMBLY/2.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/ASSEMBLY/2.2.0 https://maven.apache.org/xsd/assembly-2.2.0.xsd">
+  <id>dist</id>
+  <formats>
+    <format>zip</format>
+  </formats>
+  <baseDirectory>${project.artifactId}-${project.version}</baseDirectory>
+
+  <fileSets>
+    <fileSet>
+      <directory>${project.basedir}/health_monitor</directory>
+      <outputDirectory>health_monitor</outputDirectory>
+      <includes>
+        <include>**/*.py</include>
+      </includes>
+      <excludes>
+        <exclude>**/__pycache__/**</exclude>
+      </excludes>
+    </fileSet>
+    <fileSet>
+      <directory>${project.basedir}/scripts</directory>
+      <outputDirectory>scripts</outputDirectory>
+      <includes>
+        <include>*.sh</include>
+      </includes>
+      <fileMode>0755</fileMode>
+    </fileSet>
+    <fileSet>
+      <directory>${project.basedir}/scripts</directory>
+      <outputDirectory>scripts</outputDirectory>
+      <includes>
+        <include>*.py</include>
+      </includes>
+    </fileSet>
+    <fileSet>
+      <directory>${project.basedir}/docs</directory>
+      <outputDirectory>docs</outputDirectory>
+    </fileSet>
+    <fileSet>
+      <directory>${project.basedir}/logs</directory>
+      <outputDirectory>logs</outputDirectory>
+      <includes>
+        <include>.gitkeep</include>
+      </includes>
+    </fileSet>
+  </fileSets>
+
+  <files>
+    <file>
+      <source>${project.basedir}/monitor.py</source>
+    </file>
+    <file>
+      <source>${project.basedir}/README.md</source>
+    </file>
+  </files>
+</assembly>

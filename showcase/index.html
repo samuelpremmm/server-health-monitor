@@ -1,0 +1,950 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+</head>
+<body>
+<title>Server Health Monitor</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/yaml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/xml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/groovy.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/properties.min.js"></script>
+<style>
+/* Layout: ops-console app shell. Fixed navy sidebar of pages (drawer on phones) + scrolling content pane; each page is one view routed by #hash. */
+:root {
+  --bg: #eef2f6;
+  --surface: #ffffff;
+  --surface-2: #f5f8fb;
+  --fg: #142030;
+  --muted: #5a6a7c;
+  --line: #d8e0e8;
+  --accent: #0e7490;
+  --accent-soft: #e0f2f6;
+  --side-bg: #10243a;
+  --side-fg: #b9cde0;
+  --side-active: #1c3a58;
+  --term-bg: #0f1923;
+  --term-fg: #d4dee8;
+  --term-dim: #7b8a99;
+  --ok: #178a4c; --ok-soft: #e3f5ea;
+  --warn: #a96200; --warn-soft: #fbf0dc;
+  --crit: #c0342a; --crit-soft: #fbe5e3;
+  --ok-t: #5ad48e; --warn-t: #f3b23f; --crit-t: #ff7b70;
+  --font-display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  --side-w: 248px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b1219; --surface: #131d28; --surface-2: #0f1822; --fg: #e2e9f0; --muted: #91a1b2; --line: #243243;
+    --accent: #45bfd8; --accent-soft: #123341; --side-bg: #08101a; --side-fg: #9fb4c8; --side-active: #15293c;
+    --term-bg: #070d13; --ok: #4fca85; --ok-soft: #10301f; --warn: #f0ad3a; --warn-soft: #36280d; --crit: #ff7f74; --crit-soft: #3b1714;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b1219; --surface: #131d28; --surface-2: #0f1822; --fg: #e2e9f0; --muted: #91a1b2; --line: #243243;
+  --accent: #45bfd8; --accent-soft: #123341; --side-bg: #08101a; --side-fg: #9fb4c8; --side-active: #15293c;
+  --term-bg: #070d13; --ok: #4fca85; --ok-soft: #10301f; --warn: #f0ad3a; --warn-soft: #36280d; --crit: #ff7f74; --crit-soft: #3b1714;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.6 var(--font-body); }
+h1, h2, h3 { font-family: var(--font-display); margin: 0; line-height: 1.2; text-wrap: balance; }
+h1 { font-size: clamp(1.7rem, 3.4vw, 2.3rem); letter-spacing: -0.02em; }
+h2 { font-size: 1.2rem; }
+h3 { font-size: 1rem; font-weight: 500; }
+p { margin: 0; max-width: 68ch; }
+a { color: var(--accent); }
+code, .mono { font-family: var(--font-mono); font-size: 0.88em; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.eyebrow { font: 500 0.72rem/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+/* shell */
+.shell { display: flex; min-height: 100%; }
+.side {
+  position: fixed; inset: 0 auto 0 0; width: var(--side-w); background: var(--side-bg); color: var(--side-fg);
+  display: flex; flex-direction: column; gap: 18px; padding: calc(20px + env(safe-area-inset-top, 0px)) 14px calc(20px + env(safe-area-inset-bottom, 0px)) max(14px, env(safe-area-inset-left, 0px));
+  overflow-y: auto; z-index: 30;
+}
+.brand { display: flex; align-items: center; gap: 10px; padding: 0 6px; }
+.brand svg { flex: none; }
+.brand b { font: 700 1rem/1.15 var(--font-display); color: #fff; display: block; }
+.brand span { font: 0.72rem var(--font-mono); color: var(--side-fg); opacity: .8; }
+.nav { display: flex; flex-direction: column; gap: 2px; }
+.nav-label { font: 500 0.66rem var(--font-mono); letter-spacing: .1em; text-transform: uppercase; opacity: .55; padding: 12px 10px 4px; }
+.nav a {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--side-fg);
+  text-decoration: none; font-size: 0.88rem; font-weight: 500; border-left: 3px solid transparent;
+}
+.nav a:hover { background: #ffffff10; color: #fff; }
+.nav a.active { background: var(--side-active); color: #fff; border-left-color: #45bfd8; }
+.nav svg { width: 17px; height: 17px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.side-foot { margin-top: auto; display: flex; flex-direction: column; gap: 8px; padding: 12px 8px 0; border-top: 1px solid #ffffff14; font-size: 0.78rem; }
+.side-foot .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #5ad48e; margin-right: 6px; box-shadow: 0 0 0 3px #5ad48e33; }
+.theme-btn { align-self: flex-start; background: #ffffff12; color: var(--side-fg); border: 1px solid #ffffff1f; border-radius: 6px; padding: 5px 10px; font: 500 0.75rem var(--font-mono); cursor: pointer; }
+
+.main { flex: 1; min-width: 0; margin-left: var(--side-w); }
+.topbar { display: none; }
+.view { max-width: 1060px; margin: 0 auto; padding-block: 34px 64px; padding-left: max(28px, env(safe-area-inset-left, 0px)); padding-right: max(28px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 26px; }
+.view-head { display: flex; flex-direction: column; gap: 8px; }
+.view-head p { color: var(--muted); }
+
+/* building blocks */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.grid { display: grid; gap: 14px; }
+.g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.stat { display: flex; flex-direction: column; gap: 4px; }
+.stat .v { font: 700 1.9rem/1 var(--font-display); font-variant-numeric: tabular-nums; }
+.stat .l { color: var(--muted); font-size: 0.85rem; }
+.stat .v.ok { color: var(--ok); }
+.pill { display: inline-flex; align-items: center; gap: 6px; font: 500 0.72rem/1 var(--font-mono); padding: 5px 9px; border-radius: 999px; white-space: nowrap; }
+.pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.pill.ok { color: var(--ok); background: var(--ok-soft); }
+.pill.warn { color: var(--warn); background: var(--warn-soft); }
+.pill.crit { color: var(--crit); background: var(--crit-soft); }
+.pill.na { color: var(--muted); background: var(--surface-2); }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 9px 15px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); text-decoration: none; font-weight: 500; font-size: 0.9rem; cursor: pointer; font-family: inherit; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.muted { color: var(--muted); }
+.small { font-size: 0.85rem; }
+
+.hero { background: var(--side-bg); color: #e6eef6; border-radius: 14px; padding: 28px; display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 24px; align-items: center; }
+.hero h1 { color: #fff; }
+.hero p { color: #b9cde0; }
+.hero .eyebrow { color: #7fb4cf; }
+.hero .btn { background: #ffffff10; border-color: #ffffff2a; color: #fff; }
+.hero .btn.primary { background: #45bfd8; border-color: #45bfd8; color: #08101a; }
+.mini-term { background: #070d13; border: 1px solid #ffffff1a; border-radius: 10px; padding: 14px 16px; font: 0.76rem/1.6 var(--font-mono); color: #d4dee8; overflow-x: auto; white-space: pre; }
+
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+th { font: 500 0.7rem var(--font-mono); letter-spacing: .07em; text-transform: uppercase; color: var(--muted); background: var(--surface-2); white-space: nowrap; }
+
+/* terminal */
+.term { background: var(--term-bg); color: var(--term-fg); border-radius: 12px; overflow: hidden; border: 1px solid var(--line); min-width: 0; }
+.term-bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid #ffffff14; font: 0.78rem var(--font-mono); color: var(--term-dim); flex-wrap: wrap; }
+.term-bar i { width: 10px; height: 10px; border-radius: 50%; background: #ffffff22; display: inline-block; }
+.term pre { margin: 0; padding: 16px 18px 20px; overflow-x: auto; font: 0.8rem/1.55 var(--font-mono); }
+.t-dim { color: var(--term-dim); } .t-ok { color: var(--ok-t); } .t-warn { color: var(--warn-t); } .t-crit { color: var(--crit-t); } .t-head { color: #fff; font-weight: 500; }
+
+/* segmented */
+.seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; padding: 3px; gap: 3px; flex-wrap: wrap; }
+.seg button { border: 0; background: transparent; color: var(--muted); padding: 7px 12px; border-radius: 6px; font: 500 0.82rem var(--font-body); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--fg); box-shadow: 0 1px 2px #0000001a; }
+
+/* gauges */
+.gauge { display: flex; flex-direction: column; gap: 8px; }
+.gauge-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.gauge .num { font: 700 1.6rem/1 var(--font-display); font-variant-numeric: tabular-nums; }
+.bar { position: relative; height: 10px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; overflow: visible; }
+.bar > span { position: absolute; inset: 0 auto 0 0; border-radius: 999px; }
+.bar .tick { position: absolute; top: -4px; bottom: -4px; width: 2px; border-radius: 1px; }
+.bar .tick.w { background: var(--warn); } .bar .tick.c { background: var(--crit); }
+.gauge .sub { font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* simulator */
+.sim { display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr); gap: 18px; align-items: start; }
+.ctl { display: flex; flex-direction: column; gap: 6px; }
+.ctl label { display: flex; justify-content: space-between; font-size: 0.88rem; font-weight: 500; }
+.ctl label output { font: 500 0.85rem var(--font-mono); color: var(--accent); }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.th-row { display: grid; grid-template-columns: auto 1fr 1fr; gap: 6px 10px; align-items: center; font-size: 0.85rem; }
+.th-row input { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--fg); font: 0.85rem var(--font-mono); }
+.exit-box { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); }
+.exit-box .code { font: 700 2rem/1 var(--font-mono); }
+
+/* architecture */
+.flow { display: grid; grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1.4fr) 28px minmax(0, 1fr) 28px minmax(0, 1fr); align-items: center; gap: 0; }
+.flow .col { display: flex; flex-direction: column; gap: 10px; }
+.node { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.node b { font: 600 0.88rem var(--font-mono); }
+.node span { font-size: 0.78rem; color: var(--muted); }
+.node.key { border-color: var(--accent); background: var(--accent-soft); }
+.arrow { text-align: center; color: var(--muted); font-size: 1.1rem; }
+.formula { font-family: var(--font-mono); background: var(--surface-2); border: 1px solid var(--line); border-left: 3px solid var(--accent); padding: 12px 16px; border-radius: 0 8px 8px 0; overflow-x: auto; font-size: 0.9rem; }
+.list { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 8px; }
+.list li { max-width: 70ch; }
+
+/* code browser */
+.code-app { display: grid; grid-template-columns: 230px minmax(0, 1fr); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface); min-height: 520px; }
+.tree { border-right: 1px solid var(--line); background: var(--surface-2); padding: 10px 6px; display: flex; flex-direction: column; gap: 1px; overflow-y: auto; }
+.tree .dir { font: 500 0.72rem var(--font-mono); color: var(--muted); padding: 10px 10px 4px; }
+.tree button { text-align: left; border: 0; background: transparent; color: var(--fg); font: 0.82rem var(--font-mono); padding: 6px 10px; border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
+.tree button span { color: var(--muted); font-size: 0.72rem; }
+.tree button:hover { background: var(--surface); }
+.tree button[aria-current="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+.viewer { display: flex; flex-direction: column; min-width: 0; }
+.viewer-bar { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.viewer-bar b { font: 500 0.85rem var(--font-mono); overflow-wrap: anywhere; }
+.viewer pre { margin: 0; overflow: auto; max-height: 640px; font: 0.8rem/1.6 var(--font-mono); background: var(--term-bg); color: var(--term-fg); flex: 1; }
+.viewer pre code { display: block; padding: 14px 0; font-size: 1em; }
+.ln { display: inline-block; width: 3.2em; padding-right: 1em; text-align: right; color: #56677a; user-select: none; }
+.hljs-keyword, .hljs-built_in { color: #7cc4ff; } .hljs-string { color: #b6e3a0; } .hljs-comment { color: #6f8295; font-style: italic; }
+.hljs-number, .hljs-literal { color: #f6b77c; } .hljs-title, .hljs-title.function_ { color: #e8d48b; } .hljs-attr, .hljs-variable { color: #d6a8ff; } .hljs-meta { color: #8fb1c9; }
+
+/* tests */
+.tgroup ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.tgroup li { font: 0.8rem var(--font-mono); display: flex; gap: 8px; align-items: baseline; overflow-wrap: anywhere; }
+.tgroup li::before { content: "✓"; color: var(--ok); font-weight: 700; }
+.tgroup h3 { display: flex; justify-content: space-between; }
+.passbar { height: 12px; border-radius: 999px; background: var(--ok); }
+
+/* pipeline */
+.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border-left: 2px solid var(--line); margin-left: 7px; }
+.steps li { position: relative; padding: 0 0 18px 24px; display: flex; flex-direction: column; gap: 3px; }
+.steps li:last-child { padding-bottom: 0; }
+.steps li::before { content: ""; position: absolute; left: -8px; top: 5px; width: 14px; height: 14px; border-radius: 50%; background: var(--ok-soft); border: 2px solid var(--ok); }
+.steps li.todo::before { background: var(--surface-2); border-color: var(--muted); }
+.steps li.pending::before { background: var(--warn-soft); border-color: var(--warn); }
+.steps b { font-weight: 600; }
+.steps span { color: var(--muted); font-size: 0.9rem; }
+
+/* commands */
+.cmd { display: flex; flex-direction: column; gap: 6px; }
+.cmd-line { display: flex; align-items: stretch; background: var(--term-bg); border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
+.cmd-line code { flex: 1; min-width: 0; color: var(--term-fg); padding: 11px 14px; overflow-x: auto; white-space: pre; font-size: 0.82rem; }
+.cmd-line button { border: 0; border-left: 1px solid #ffffff1a; background: transparent; color: var(--term-dim); font: 500 0.76rem var(--font-mono); padding: 0 14px; cursor: pointer; }
+.cmd-line button:hover { color: #fff; }
+
+.env-card { display: flex; flex-direction: column; gap: 10px; }
+.env-card .head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+@media (max-width: 980px) {
+  .g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .g3 { grid-template-columns: minmax(0, 1fr); }
+  .hero { grid-template-columns: minmax(0, 1fr); }
+  .sim { grid-template-columns: minmax(0, 1fr); }
+  .flow { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .flow .arrow { transform: rotate(90deg); }
+}
+@media (max-width: 820px) {
+  :root { --side-w: 0px; }
+  .side { width: 270px; transform: translateX(-100%); transition: transform .2s ease; box-shadow: 0 0 40px #0006; }
+  .side.open { transform: none; }
+  .main { margin-left: 0; }
+  .topbar { display: flex; position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: var(--side-bg); color: #fff; align-items: center; gap: 12px; padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 25; background: var(--side-bg); }
+  .topbar button { background: #ffffff14; border: 1px solid #ffffff26; color: #fff; border-radius: 6px; padding: 6px 10px; font: 500 0.8rem var(--font-mono); cursor: pointer; }
+  .topbar b { font: 700 0.98rem var(--font-display); }
+  .view { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 22px 48px; }
+  .g2 { grid-template-columns: minmax(0, 1fr); }
+  .code-app { grid-template-columns: minmax(0, 1fr); }
+  .tree { border-right: 0; border-bottom: 1px solid var(--line); max-height: 210px; }
+  .scrim { position: fixed; inset: 0; background: #0006; z-index: 29; }
+}
+@media (max-width: 460px) { .g4 { grid-template-columns: minmax(0, 1fr); } .hero { padding: 20px; } }
+@media (prefers-reduced-motion: reduce) { .side { transition: none; } }
+</style>
+
+<div class="shell">
+  <aside class="side" id="side" aria-label="Pages">
+    <div class="brand">
+      <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><rect width="34" height="34" rx="9" fill="#1c3a58"/><polyline points="5,18 11,18 14,10 19,25 22,15 24,18 29,18" fill="none" stroke="#45bfd8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div><b>Server Health<br>Monitor</b><span>v1.0.0 · Python</span></div>
+    </div>
+    <nav class="nav" id="nav">
+      <div class="nav-label">Project</div>
+      <a href="#overview" data-v="overview"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Dashboard</a>
+      <a href="#report" data-v="report"><svg viewBox="0 0 24 24"><polyline points="3,12 7,12 10,5 14,19 17,12 21,12"/></svg>Live report</a>
+      <a href="#simulator" data-v="simulator"><svg viewBox="0 0 24 24"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="7" cy="18" r="2"/></svg>Threshold simulator</a>
+      <div class="nav-label">Engineering</div>
+      <a href="#architecture" data-v="architecture"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="6" height="5" rx="1"/><rect x="15" y="4" width="6" height="5" rx="1"/><rect x="9" y="15" width="6" height="5" rx="1"/><path d="M6 9v3h12V9M12 12v3"/></svg>How it works</a>
+      <a href="#code" data-v="code"><svg viewBox="0 0 24 24"><polyline points="8,7 3,12 8,17"/><polyline points="16,7 21,12 16,17"/></svg>Source code</a>
+      <a href="#tests" data-v="tests"><svg viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/></svg>Tests</a>
+      <a href="#pipeline" data-v="pipeline"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M6 8.5v7M8.5 6c5 0 7 2 7.5 4"/></svg>CI pipeline</a>
+      <a href="#jenkins" data-v="jenkins"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/></svg>Jenkins CI/CD</a>
+      <div class="nav-label">Deploy</div>
+      <a href="#deploy" data-v="deploy"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><line x1="7" y1="7.5" x2="7.01" y2="7.5"/><line x1="7" y1="16.5" x2="7.01" y2="16.5"/></svg>Where it runs</a>
+      <a href="#run" data-v="run"><svg viewBox="0 0 24 24"><polyline points="5,8 9,12 5,16"/><line x1="12" y1="16" x2="19" y2="16"/></svg>Run it yourself</a>
+      <a href="#about" data-v="about"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>About</a>
+    </nav>
+    <div class="side-foot">
+      <div><span class="dot"></span>CI passing on <code>main</code></div>
+      <a href="https://github.com/samuelpremmm/server-health-monitor" target="_blank" rel="noopener" style="color:#7fd3e6">github.com/samuelpremmm</a>
+      <button class="theme-btn" id="theme-btn" type="button">Theme: system</button>
+    </div>
+  </aside>
+  <div class="scrim" id="scrim" hidden></div>
+
+  <div class="main">
+    <div class="topbar"><button type="button" id="menu-btn" aria-controls="side" aria-expanded="false">Menu</button><b id="top-title">Server Health Monitor</b></div>
+
+    <!-- DASHBOARD -->
+    <section class="view" data-view="overview">
+      <div class="hero">
+        <div style="display:flex;flex-direction:column;gap:14px;min-width:0">
+          <span class="eyebrow">Linux · Python 3 · DevOps</span>
+          <h1>Linux Server Health Monitor</h1>
+          <p>A command-line tool that checks a Linux server's CPU, memory, disks and system details, rates each one OK, WARNING or CRITICAL, and saves every report to a rotating log file. It uses only the Python standard library.</p>
+          <div class="row">
+            <a class="btn primary" href="#report">See a real report</a>
+            <a class="btn" href="https://github.com/samuelpremmm/server-health-monitor" target="_blank" rel="noopener">GitHub repo</a>
+          </div>
+        </div>
+        <div class="mini-term" aria-label="Latest real run"><span class="t-dim">$ python -m health_monitor --disk /</span>
+Overall status: <span class="t-ok">OK</span>
+[ CPU ]      5.2 %          <span class="t-ok">OK</span>
+[ MEMORY ]   7.3 %          <span class="t-ok">OK</span>
+[ DISK ] /   39.5 %         <span class="t-ok">OK</span>
+<span class="t-dim">Ubuntu 26.04.1 LTS · GitHub Actions</span>
+Exit code: <span class="t-ok">0</span></div>
+      </div>
+
+      <div class="grid g4">
+        <div class="card stat"><span class="v ok">19/19</span><span class="l">tests passing</span></div>
+        <div class="card stat"><span class="v">0</span><span class="l">packages to install</span></div>
+        <div class="card stat"><span class="v">4</span><span class="l">health checks</span></div>
+        <div class="card stat"><span class="v">~700</span><span class="l">lines of Python</span></div>
+      </div>
+
+      <div class="grid g2">
+        <div class="card">
+          <div class="row" style="justify-content:space-between"><h2>Deployment status</h2><a class="small" href="#deploy">Details</a></div>
+          <table>
+            <tbody>
+              <tr><td>GitHub Actions (Ubuntu)</td><td><span class="pill ok">Running on every push</span></td></tr>
+              <tr><td>GitHub Codespaces</td><td><span class="pill ok">Ready</span></td></tr>
+              <tr><td>Windows demo (sample data)</td><td><span class="pill ok">Works</span></td></tr>
+              <tr><td>AWS EC2 (Mumbai)</td><td><span class="pill warn">Waiting for account activation</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="row" style="justify-content:space-between"><h2>Recent CI runs</h2><a class="small" href="#pipeline">Pipeline</a></div>
+          <table>
+            <tbody>
+              <tr><td><span class="pill ok">success</span></td><td>CI: run the health monitor on Ubuntu and upload its report</td><td class="muted">20s</td></tr>
+              <tr><td><span class="pill ok">success</span></td><td>Add pytest.ini so CI can import health_monitor</td><td class="muted">17s</td></tr>
+              <tr><td><span class="pill crit">failure</span></td><td>Create python-app.yml</td><td class="muted">22s</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Project requirements</h2>
+        <div class="table-wrap" style="border:0">
+          <table>
+            <thead><tr><th>#</th><th>Requirement</th><th>Where it's done</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>Check CPU utilization</td><td><code>cpu.py</code> reads <code>/proc/stat</code> twice, plus <code>/proc/loadavg</code></td><td><span class="pill ok">Done</span></td></tr>
+              <tr><td>2</td><td>Check RAM usage</td><td><code>memory.py</code> parses <code>/proc/meminfo</code> (RAM and swap)</td><td><span class="pill ok">Done</span></td></tr>
+              <tr><td>3</td><td>Check disk utilization</td><td><code>disk.py</code> uses <code>shutil.disk_usage()</code> per mount point</td><td><span class="pill ok">Done</span></td></tr>
+              <tr><td>4</td><td>Display system information</td><td><code>sysinfo.py</code>: hostname, OS, kernel, architecture, IP, uptime</td><td><span class="pill ok">Done</span></td></tr>
+              <tr><td>5</td><td>Generate a health report</td><td><code>report.py</code>: thresholds, OK/WARNING/CRITICAL, text or JSON</td><td><span class="pill ok">Done</span></td></tr>
+              <tr><td>6</td><td>Save the report to a log file</td><td><code>save_report()</code> appends to <code>logs/health_report.log</code> with rotation</td><td><span class="pill ok">Done</span></td></tr>
+              <tr><td>7</td><td>Upload to GitHub</td><td>Public repo with README, docs, tests and CI</td><td><span class="pill ok">Done</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- LIVE REPORT -->
+    <section class="view" data-view="report" hidden>
+      <div class="view-head">
+        <span class="eyebrow">Live report</span>
+        <h1>A real health report</h1>
+        <p>This report was produced by the tool on a fresh Ubuntu server in GitHub Actions on 10 Nov 2026. Switch to see the sample from an AWS EC2 host.</p>
+      </div>
+      <div class="seg" role="group" aria-label="Report source">
+        <button type="button" id="src-ci" aria-pressed="true">GitHub Actions · Ubuntu (real)</button>
+        <button type="button" id="src-ec2" aria-pressed="false">AWS EC2 · sample</button>
+      </div>
+      <div class="grid g3" id="gauges"></div>
+      <div class="term">
+        <div class="term-bar"><i></i><i></i><i></i><span id="report-cmd">$ python -m health_monitor --disk /</span></div>
+        <pre id="report-pre"></pre>
+      </div>
+      <p class="small muted" id="report-note"></p>
+    </section>
+
+    <!-- SIMULATOR -->
+    <section class="view" data-view="simulator" hidden>
+      <div class="view-head">
+        <span class="eyebrow">Interactive</span>
+        <h1>Threshold simulator</h1>
+        <p>Move the sliders to see how the tool rates a server. This page uses the same rules as <code>report.py</code>: a value at or above the critical limit is CRITICAL, at or above the warning limit is WARNING, and the overall status is the worst check.</p>
+      </div>
+      <div class="sim">
+        <div class="card">
+          <div class="ctl"><label for="s-cpu">CPU usage <output id="o-cpu"></output></label><input type="range" id="s-cpu" min="0" max="100" step="0.5" value="40"></div>
+          <div class="ctl"><label for="s-mem">Memory usage <output id="o-mem"></output></label><input type="range" id="s-mem" min="0" max="100" step="0.5" value="75"></div>
+          <div class="ctl"><label for="s-disk">Disk usage <output id="o-disk"></output></label><input type="range" id="s-disk" min="0" max="100" step="0.5" value="31.9"></div>
+          <div style="display:flex;flex-direction:column;gap:8px;padding-top:6px;border-top:1px solid var(--line)">
+            <span class="eyebrow" style="padding-top:10px">Limits (%)</span>
+            <div class="th-row">
+              <span></span><span class="small muted">Warning</span><span class="small muted">Critical</span>
+              <span>CPU</span><input id="t-cpu-w" type="number" min="0" max="100" value="75" aria-label="CPU warning"><input id="t-cpu-c" type="number" min="0" max="100" value="90" aria-label="CPU critical">
+              <span>Memory</span><input id="t-mem-w" type="number" min="0" max="100" value="75" aria-label="Memory warning"><input id="t-mem-c" type="number" min="0" max="100" value="90" aria-label="Memory critical">
+              <span>Disk</span><input id="t-disk-w" type="number" min="0" max="100" value="80" aria-label="Disk warning"><input id="t-disk-c" type="number" min="0" max="100" value="90" aria-label="Disk critical">
+            </div>
+          </div>
+          <div class="row">
+            <button class="btn" type="button" id="preset-ok">Healthy</button>
+            <button class="btn" type="button" id="preset-warn">Busy</button>
+            <button class="btn" type="button" id="preset-crit">Disk full</button>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px;min-width:0">
+          <div class="exit-box"><span class="code" id="sim-exit">1</span><div><div id="sim-status"></div><div class="small muted">Exit code. Cron and monitoring tools read this number.</div></div></div>
+          <div class="cmd-line"><code id="sim-cmd"></code><button type="button" class="copy">Copy</button></div>
+          <div class="term"><div class="term-bar"><i></i><i></i><i></i><span>Simulated output</span></div><pre id="sim-pre"></pre></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ARCHITECTURE -->
+    <section class="view" data-view="architecture" hidden>
+      <div class="view-head">
+        <span class="eyebrow">How it works</span>
+        <h1>From /proc files to a report</h1>
+        <p>Linux keeps live system numbers in plain text files under <code>/proc</code>. Each collector reads its own files and returns a dictionary. <code>report.py</code> rates the numbers and writes the result.</p>
+      </div>
+      <div class="card">
+        <div class="flow">
+          <div class="col"><div class="node key"><b>__main__.py</b><span>Command-line options</span></div></div>
+          <div class="arrow">→</div>
+          <div class="col">
+            <div class="node"><b>cpu.py</b><span>/proc/stat · /proc/loadavg</span></div>
+            <div class="node"><b>memory.py</b><span>/proc/meminfo</span></div>
+            <div class="node"><b>disk.py</b><span>shutil.disk_usage()</span></div>
+            <div class="node"><b>sysinfo.py</b><span>/etc/os-release · /proc/uptime</span></div>
+          </div>
+          <div class="arrow">→</div>
+          <div class="col"><div class="node key"><b>report.py</b><span>build_report() + thresholds</span></div></div>
+          <div class="arrow">→</div>
+          <div class="col">
+            <div class="node"><b>Console</b><span>Text or JSON</span></div>
+            <div class="node"><b>health_report.log</b><span>Rotates at 1 MB, keeps 5</span></div>
+            <div class="node"><b>Exit code</b><span>0 / 1 / 2 / 3</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="grid g2">
+        <div class="card">
+          <h2>CPU usage formula</h2>
+          <p class="small">The numbers in <code>/proc/stat</code> are running totals since boot. The tool reads them twice, one second apart, and compares the change.</p>
+          <div class="formula">usage % = (1 − Δidle / Δtotal) × 100</div>
+          <p class="small muted">Idle includes <code>iowait</code>. Example: if 100 units of CPU time passed and 60 were idle, usage is 40%.</p>
+        </div>
+        <div class="card">
+          <h2>Exit codes</h2>
+          <p class="small">These follow the Nagios plugin convention, so cron, shell scripts, Jenkins and monitoring systems can react to the result.</p>
+          <div class="row"><span class="pill ok">0 · OK</span><span class="pill warn">1 · WARNING</span><span class="pill crit">2 · CRITICAL</span><span class="pill na">3 · not Linux</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Design choices</h2>
+        <ul class="list">
+          <li><b>No third-party packages.</b> Libraries like <code>psutil</code> need <code>pip install</code>, which is often blocked on production servers. Reading <code>/proc</code> directly runs anywhere with Python 3.8+.</li>
+          <li><b>One module per check.</b> CPU, memory, disk and system info are independent, so each can be tested and changed on its own.</li>
+          <li><b>File paths as parameters.</b> Every function that reads <code>/proc</code> takes the path as an argument, so tests can pass in sample files and run on any OS.</li>
+          <li><b>Log rotation.</b> <code>RotatingFileHandler</code> caps the log at 1 MB and keeps 5 old files, so a cron job can't fill the disk it is monitoring.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- CODE -->
+    <section class="view" data-view="code" hidden>
+      <div class="view-head">
+        <span class="eyebrow">Source code</span>
+        <h1>Browse the code</h1>
+        <p>Every file below is the real source from the <code>main</code> branch. Pick a file on the left.</p>
+      </div>
+      <div class="code-app">
+        <div class="tree" id="tree"></div>
+        <div class="viewer">
+          <div class="viewer-bar"><b id="file-name"></b><div class="row"><span class="small muted" id="file-meta"></span><a class="btn" id="file-gh" target="_blank" rel="noopener" style="padding:5px 10px;font-size:0.8rem">Open on GitHub</a></div></div>
+          <pre><code id="file-code"></code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- TESTS -->
+    <section class="view" data-view="tests" hidden>
+      <div class="view-head">
+        <span class="eyebrow">Quality</span>
+        <h1>19 tests, all passing</h1>
+        <p>The tests feed saved copies of real <code>/proc</code> files from <code>tests/fixtures/</code> to the code, so they give the same result on Windows, macOS and Linux.</p>
+      </div>
+      <div class="card">
+        <div class="row" style="justify-content:space-between"><b>pytest · 19 passed · 0 failed · 0.87 s</b><span class="pill ok">PASS</span></div>
+        <div class="passbar" role="img" aria-label="19 of 19 tests passed"></div>
+      </div>
+      <div class="grid g2" id="test-groups"></div>
+      <div class="card">
+        <h2>Sample /proc fixtures</h2>
+        <p class="small muted">Captured from a real Linux machine and used as test input.</p>
+        <div class="row" id="fixture-list"></div>
+      </div>
+    </section>
+
+    <!-- PIPELINE -->
+    <section class="view" data-view="pipeline" hidden>
+      <div class="view-head">
+        <span class="eyebrow">CI/CD</span>
+        <h1>Checked on every push</h1>
+        <p>A GitHub Actions workflow runs on every push and pull request to <code>main</code>, on a fresh Ubuntu machine.</p>
+      </div>
+      <div class="grid g2">
+        <div class="card">
+          <h2>Workflow steps</h2>
+          <ol class="steps">
+            <li><b>Check out code</b><span>actions/checkout@v4</span></li>
+            <li><b>Set up Python 3.10</b><span>actions/setup-python</span></li>
+            <li><b>Lint</b><span>flake8 stops the build on syntax errors or undefined names.</span></li>
+            <li><b>Test</b><span>The full pytest suite.</span></li>
+            <li><b>Run the monitor</b><span>A real health check of the CI machine. It fails only if the tool itself breaks (exit code 3 or higher).</span></li>
+            <li><b>Upload the report</b><span>Saved as a downloadable <code>health-report</code> artifact.</span></li>
+          </ol>
+        </div>
+        <div class="card">
+          <h2>Run history</h2>
+          <div class="table-wrap" style="border:0">
+            <table>
+              <thead><tr><th>Result</th><th>Commit</th><th>Time</th></tr></thead>
+              <tbody>
+                <tr><td><span class="pill ok">success</span></td><td>CI: run the health monitor on Ubuntu and upload its report</td><td>20s</td></tr>
+                <tr><td><span class="pill ok">success</span></td><td>Add pytest.ini so CI can import health_monitor</td><td>17s</td></tr>
+                <tr><td><span class="pill crit">failure</span></td><td>Create python-app.yml</td><td>22s</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="small muted">The first run failed because pytest couldn't import the package. Adding <code>pytest.ini</code> fixed it, and every run since has passed.</p>
+          <a class="btn" href="https://github.com/samuelpremmm/server-health-monitor/actions" target="_blank" rel="noopener">Open GitHub Actions</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- JENKINS -->
+    <section class="view" data-view="jenkins" hidden>
+      <div class="view-head">
+        <span class="eyebrow">CI/CD · Jenkins + Maven + SonarQube + Nexus</span>
+        <h1>Enterprise CI/CD pipeline</h1>
+        <p>A second pipeline, in the style of an enterprise Java team. Jenkins builds every change, Maven runs the tests and packages a versioned zip, SonarQube checks code quality, and Nexus stores each release.</p>
+      </div>
+      <div class="grid g4">
+        <div class="card stat"><span class="v">10</span><span class="l">pipeline stages</span></div>
+        <div class="card stat"><span class="v ok">19/19</span><span class="l">tests run by <code>mvn test</code></span></div>
+        <div class="card stat"><span class="v">73%</span><span class="l">line coverage sent to SonarQube</span></div>
+        <div class="card stat"><span class="v">2</span><span class="l">Nexus repos: snapshots and releases</span></div>
+      </div>
+      <div class="card">
+        <h2>How a change flows</h2>
+        <div class="flow">
+          <div class="col"><div class="node key"><b>GitHub</b><span>push to main</span></div></div>
+          <div class="arrow">→</div>
+          <div class="col">
+            <div class="node key"><b>Jenkins</b><span>Jenkinsfile, 10 stages</span></div>
+            <div class="node"><b>Maven</b><span>mvn test · package · deploy</span></div>
+          </div>
+          <div class="arrow">→</div>
+          <div class="col"><div class="node"><b>SonarQube</b><span>Bugs, smells, coverage, Quality Gate</span></div></div>
+          <div class="arrow">→</div>
+          <div class="col"><div class="node"><b>Nexus</b><span>server-health-monitor-1.0.0-N-dist.zip</span></div></div>
+        </div>
+      </div>
+      <div class="grid g2">
+        <div class="card">
+          <h2>Pipeline stages</h2>
+          <ol class="steps">
+            <li><b>Checkout</b><span>Pull the code from GitHub.</span></li>
+            <li><b>Set up Python</b><span>A virtualenv with pytest, pytest-cov and flake8.</span></li>
+            <li><b>Version</b><span>Read <code>__version__</code> and run <code>mvn versions:set</code>: 1.0.0-SNAPSHOT, or 1.0.0-&lt;build&gt; for a release.</span></li>
+            <li><b>Lint</b><span>flake8 fails on syntax errors and saves style warnings for SonarQube.</span></li>
+            <li><b>Test</b><span><code>mvn test</code> runs pytest and publishes JUnit results and coverage.</span></li>
+            <li><b>SonarQube Analysis</b><span>sonar-scanner uploads code, coverage and lint findings.</span></li>
+            <li><b>Quality Gate</b><span>The pipeline stops if SonarQube's gate fails.</span></li>
+            <li><b>Package</b><span><code>mvn package</code> builds the distribution zip with maven-assembly-plugin.</span></li>
+            <li><b>Smoke Test</b><span>Unzip the package and run a real health check on the Linux agent.</span></li>
+            <li><b>Deploy to Nexus</b><span><code>mvn deploy</code> uploads the pom and zip with credentials from Jenkins.</span></li>
+          </ol>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px;min-width:0">
+          <div class="card">
+            <h2>Local stack (Docker Compose)</h2>
+            <div class="table-wrap" style="border:0">
+              <table>
+                <thead><tr><th>Service</th><th>Image</th><th>Port</th></tr></thead>
+                <tbody>
+                  <tr><td>Jenkins</td><td><code>jenkins:2.462.3-lts-jdk17</code> + Python, Maven</td><td>8080</td></tr>
+                  <tr><td>SonarQube</td><td><code>sonarqube:10.6.0-community</code></td><td>9000</td></tr>
+                  <tr><td>PostgreSQL</td><td><code>postgres:16.4</code> (SonarQube DB)</td><td>internal</td></tr>
+                  <tr><td>Nexus</td><td><code>sonatype/nexus3:3.70.1</code></td><td>8081</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="cmd-line"><code>cd ci &amp;&amp; docker compose up -d --build</code><button type="button" class="copy">Copy</button></div>
+          </div>
+          <div class="card">
+            <h2>Versioning</h2>
+            <div class="table-wrap" style="border:0">
+              <table>
+                <thead><tr><th>Build</th><th>Version</th><th>Nexus repo</th></tr></thead>
+                <tbody>
+                  <tr><td>Every push</td><td><code>1.0.0-SNAPSHOT</code></td><td>maven-snapshots</td></tr>
+                  <tr><td>Release ticked</td><td><code>1.0.0-&lt;build&gt;</code></td><td>maven-releases</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="small muted">The version has one source of truth, <code>health_monitor/__init__.py</code>, so the code and the artifact always match.</p>
+          </div>
+          <div class="card">
+            <h2>Status</h2>
+            <div class="row"><span class="pill ok">Pipeline written</span><span class="pill ok">Tests and reports checked</span><span class="pill warn">Waiting for Docker to run the stack</span></div>
+            <div class="row"><a class="btn" href="#code" id="open-jenkinsfile">View Jenkinsfile</a><a class="btn" href="#code" id="open-pom">View pom.xml</a></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DEPLOY -->
+    <section class="view" data-view="deploy" hidden>
+      <div class="view-head">
+        <span class="eyebrow">Environments</span>
+        <h1>Where it runs</h1>
+        <p>The tool runs on any Linux machine with Python 3.8 or newer. These are the places it has been run or is ready to run.</p>
+      </div>
+      <div class="grid g2">
+        <div class="card env-card"><div class="head"><h2>GitHub Actions</h2><span class="pill ok">Live</span></div><p class="small">Ubuntu 26.04 runner, 4 cores, 15.6 GB RAM. Runs on every push and saves the report as an artifact.</p></div>
+        <div class="card env-card"><div class="head"><h2>GitHub Codespaces</h2><span class="pill ok">Ready</span></div><p class="small">A 2-core Ubuntu machine in the browser, opened straight from the repo. Stopped when not in use to save free hours.</p></div>
+        <div class="card env-card"><div class="head"><h2>Windows demo</h2><span class="pill ok">Works</span></div><p class="small"><code>scripts/demo_with_fixtures.py</code> runs the full pipeline on Windows with the sample <code>/proc</code> files.</p></div>
+        <div class="card env-card"><div class="head"><h2>AWS EC2 · Mumbai</h2><span class="pill warn">Pending</span></div><p class="small">Planned on a free-plan <code>t3.micro</code> Ubuntu instance. Waiting for the AWS account to finish activation.</p></div>
+      </div>
+      <div class="card">
+        <h2>AWS EC2 deployment plan</h2>
+        <ol class="steps">
+          <li class="pending"><b>Activate the AWS account</b><span>Payment method verification, identity check and the free Basic support plan.</span></li>
+          <li class="todo"><b>Launch a t3.micro Ubuntu 24.04 instance</b><span>Region ap-south-1 (Mumbai), 8 GB disk, SSH allowed only from my IP.</span></li>
+          <li class="todo"><b>Connect with EC2 Instance Connect</b><span>A browser terminal, with no key files to manage.</span></li>
+          <li class="todo"><b>Clone and run</b><span><code>git clone … &amp;&amp; python3 -m health_monitor</code></span></li>
+          <li class="todo"><b>Schedule with cron</b><span><code>bash scripts/install_cron.sh 5</code> runs it every 5 minutes.</span></li>
+          <li class="todo"><b>Terminate the instance</b><span>Avoids using up the free-plan credits.</span></li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- RUN -->
+    <section class="view" data-view="run" hidden>
+      <div class="view-head">
+        <span class="eyebrow">Try it</span>
+        <h1>Run it yourself</h1>
+        <p>Paste these into a Linux terminal: a server, WSL, or a GitHub Codespace.</p>
+      </div>
+      <div class="card" style="gap:16px">
+        <div class="cmd"><span class="small muted">Clone and run once</span><div class="cmd-line"><code>git clone https://github.com/samuelpremmm/server-health-monitor.git &amp;&amp; cd server-health-monitor &amp;&amp; python3 -m health_monitor</code><button type="button" class="copy">Copy</button></div></div>
+        <div class="cmd"><span class="small muted">Check two mount points</span><div class="cmd-line"><code>python3 -m health_monitor --disk / --disk /home</code><button type="button" class="copy">Copy</button></div></div>
+        <div class="cmd"><span class="small muted">Report every 60 seconds (Ctrl+C to stop)</span><div class="cmd-line"><code>python3 -m health_monitor --watch 60</code><button type="button" class="copy">Copy</button></div></div>
+        <div class="cmd"><span class="small muted">JSON output for other tools</span><div class="cmd-line"><code>python3 -m health_monitor --json --log-file logs/health.jsonl</code><button type="button" class="copy">Copy</button></div></div>
+        <div class="cmd"><span class="small muted">Stricter CPU limits</span><div class="cmd-line"><code>python3 -m health_monitor --cpu-warn 60 --cpu-crit 80</code><button type="button" class="copy">Copy</button></div></div>
+        <div class="cmd"><span class="small muted">Run automatically every 5 minutes with cron</span><div class="cmd-line"><code>bash scripts/install_cron.sh 5</code><button type="button" class="copy">Copy</button></div></div>
+        <div class="cmd"><span class="small muted">Run the tests</span><div class="cmd-line"><code>pip install pytest &amp;&amp; pytest</code><button type="button" class="copy">Copy</button></div></div>
+        <div class="cmd"><span class="small muted">Demo on Windows or macOS with sample data</span><div class="cmd-line"><code>python scripts/demo_with_fixtures.py</code><button type="button" class="copy">Copy</button></div></div>
+      </div>
+      <div class="card">
+        <h2>All options</h2>
+        <div class="table-wrap" style="border:0">
+          <table>
+            <thead><tr><th>Option</th><th>What it does</th><th>Default</th></tr></thead>
+            <tbody>
+              <tr><td><code>--disk PATH</code></td><td>Mount point to check. Repeat for more.</td><td><code>/</code></td></tr>
+              <tr><td><code>--log-file FILE</code></td><td>Where reports are appended</td><td><code>logs/health_report.log</code></td></tr>
+              <tr><td><code>--interval SEC</code></td><td>Seconds between the two CPU samples</td><td>1</td></tr>
+              <tr><td><code>--watch SEC</code></td><td>Keep running, one report every SEC seconds</td><td>off</td></tr>
+              <tr><td><code>--json</code></td><td>Print and log JSON</td><td>off</td></tr>
+              <tr><td><code>--quiet</code></td><td>Write the log file only</td><td>off</td></tr>
+              <tr><td><code>--cpu-warn / --cpu-crit</code></td><td>CPU limits in %</td><td>75 / 90</td></tr>
+              <tr><td><code>--mem-warn / --mem-crit</code></td><td>Memory limits in %</td><td>75 / 90</td></tr>
+              <tr><td><code>--disk-warn / --disk-crit</code></td><td>Disk limits in %</td><td>80 / 90</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ABOUT -->
+    <section class="view" data-view="about" hidden>
+      <div class="view-head">
+        <span class="eyebrow">About</span>
+        <h1>About this project</h1>
+      </div>
+      <div class="grid g2">
+        <div class="card">
+          <h2>Built by</h2>
+          <p><b>Chigurupati Prem Kumar</b></p>
+          <p class="small muted">Linux server monitoring project, November 2026.</p>
+          <div class="row"><a class="btn primary" href="https://github.com/samuelpremmm/server-health-monitor" target="_blank" rel="noopener">View on GitHub</a><a class="btn" href="https://github.com/samuelpremmm" target="_blank" rel="noopener">@samuelpremmm</a></div>
+        </div>
+        <div class="card">
+          <h2>Skills shown</h2>
+          <div class="row">
+            <span class="pill na">Linux /proc</span><span class="pill na">Python 3</span><span class="pill na">CLI design</span><span class="pill na">Logging and rotation</span><span class="pill na">pytest</span><span class="pill na">GitHub Actions CI</span><span class="pill na">cron</span><span class="pill na">Git</span><span class="pill na">AWS EC2 (planned)</span>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>What I learned</h2>
+        <ul class="list">
+          <li>How Linux exposes CPU, memory and uptime through plain files in <code>/proc</code>, and how to turn running counters into a usage percentage.</li>
+          <li>How to design a tool for automation: clear exit codes, JSON output, a quiet mode and log rotation.</li>
+          <li>How to make code testable by passing file paths in, so tests run on any OS with saved fixtures.</li>
+          <li>How to set up CI that lints, tests and runs the tool on a real Ubuntu server, and how to read and fix a failing run.</li>
+        </ul>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script id="src-data" type="application/json">{"files": ["health_monitor/__init__.py", "health_monitor/__main__.py", "health_monitor/cpu.py", "health_monitor/memory.py", "health_monitor/disk.py", "health_monitor/sysinfo.py", "health_monitor/report.py", "tests/test_health_monitor.py", "scripts/demo_with_fixtures.py", "scripts/install_cron.sh", ".github/workflows/python-app.yml", "monitor.py", "pytest.ini", "Jenkinsfile", "pom.xml", "sonar-project.properties", "src/assembly/distribution.xml", "ci/docker-compose.yml", "ci/jenkins/Dockerfile", "ci/jenkins/plugins.txt", "ci/maven-settings.xml"], "content": {"health_monitor/__init__.py": "\"\"\"Linux Server Health Monitor.\n\nA small, dependency-free Python tool that checks CPU, memory and disk usage,\ncollects system information, builds a health report and appends it to a log file.\n\"\"\"\n\n__version__ = \"1.0.0\"\n", "health_monitor/__main__.py": "\"\"\"Command-line entry point.\n\n    python3 -m health_monitor                    # one report, printed and logged\n    python3 -m health_monitor --disk / --disk /home\n    python3 -m health_monitor --watch 60         # repeat every 60 seconds\n    python3 -m health_monitor --json             # JSON output\n\nExit code: 0 = OK, 1 = WARNING, 2 = CRITICAL (handy for cron and alerting).\n\"\"\"\n\nimport argparse\nimport json\nimport sys\nimport time\n\nfrom . import __version__\nfrom .cpu import get_cpu_usage\nfrom .disk import get_disk_usage\nfrom .memory import get_memory_usage\nfrom .report import DEFAULT_THRESHOLDS, SEVERITY, build_report, format_report, save_report\nfrom .sysinfo import get_system_info\n\n\ndef parse_args(argv=None):\n    p = argparse.ArgumentParser(\n        prog=\"health_monitor\",\n        description=\"Check Linux server CPU, memory and disk health and log a report.\",\n    )\n    p.add_argument(\"--disk\", action=\"append\", metavar=\"PATH\",\n                   help=\"mount point to check (repeatable, default: /)\")\n    p.add_argument(\"--log-file\", default=\"logs/health_report.log\",\n                   help=\"where to append reports (default: logs/health_report.log)\")\n    p.add_argument(\"--interval\", type=float, default=1.0,\n                   help=\"seconds between CPU samples (default: 1)\")\n    p.add_argument(\"--watch\", type=float, metavar=\"SECONDS\",\n                   help=\"keep running, one report every SECONDS\")\n    p.add_argument(\"--json\", action=\"store_true\", help=\"print and log JSON instead of text\")\n    p.add_argument(\"--quiet\", action=\"store_true\", help=\"only write the log file\")\n    p.add_argument(\"--cpu-warn\", type=float, default=DEFAULT_THRESHOLDS[\"cpu\"][\"warning\"])\n    p.add_argument(\"--cpu-crit\", type=float, default=DEFAULT_THRESHOLDS[\"cpu\"][\"critical\"])\n    p.add_argument(\"--mem-warn\", type=float, default=DEFAULT_THRESHOLDS[\"memory\"][\"warning\"])\n    p.add_argument(\"--mem-crit\", type=float, default=DEFAULT_THRESHOLDS[\"memory\"][\"critical\"])\n    p.add_argument(\"--disk-warn\", type=float, default=DEFAULT_THRESHOLDS[\"disk\"][\"warning\"])\n    p.add_argument(\"--disk-crit\", type=float, default=DEFAULT_THRESHOLDS[\"disk\"][\"critical\"])\n    p.add_argument(\"--version\", action=\"version\", version=f\"%(prog)s {__version__}\")\n    return p.parse_args(argv)\n\n\ndef run_once(args):\n    thresholds = {\n        \"cpu\": {\"warning\": args.cpu_warn, \"critical\": args.cpu_crit},\n        \"memory\": {\"warning\": args.mem_warn, \"critical\": args.mem_crit},\n        \"disk\": {\"warning\": args.disk_warn, \"critical\": args.disk_crit},\n    }\n    report = build_report(\n        system=get_system_info(),\n        cpu=get_cpu_usage(interval=args.interval),\n        memory=get_memory_usage(),\n        disks=get_disk_usage(args.disk or [\"/\"]),\n        thresholds=thresholds,\n    )\n    path = save_report(report, args.log_file, as_json=args.json)\n    if not args.quiet:\n        print(json.dumps(report, indent=2) if args.json else format_report(report))\n        print(f\"\\nReport saved to {path}\")\n    return SEVERITY[report[\"overall_status\"]]\n\n\ndef main(argv=None):\n    args = parse_args(argv)\n    if not sys.platform.startswith(\"linux\"):\n        print(\"This tool reads /proc and must run on Linux.\", file=sys.stderr)\n        return 3\n    try:\n        if args.watch:\n            while True:\n                run_once(args)\n                time.sleep(args.watch)\n        return run_once(args)\n    except KeyboardInterrupt:\n        return 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n", "health_monitor/cpu.py": "\"\"\"CPU utilization.\n\nCPU usage is calculated from two samples of /proc/stat taken `interval` seconds\napart. The first line of /proc/stat looks like:\n\n    cpu  user nice system idle iowait irq softirq steal guest guest_nice\n\nUsage % = (1 - idle_delta / total_delta) * 100, where \"idle\" includes iowait.\n\"\"\"\n\nimport os\nimport time\n\nPROC_STAT = \"/proc/stat\"\nPROC_LOADAVG = \"/proc/loadavg\"\n\n\ndef read_cpu_times(path=PROC_STAT):\n    \"\"\"Return (idle, total) jiffies from the aggregate 'cpu' line of /proc/stat.\"\"\"\n    with open(path, encoding=\"utf-8\") as f:\n        for line in f:\n            if line.startswith(\"cpu \"):\n                values = [int(v) for v in line.split()[1:]]\n                break\n        else:\n            raise ValueError(f\"No aggregate 'cpu' line found in {path}\")\n\n    # guest and guest_nice are already counted inside user/nice, so ignore them.\n    values = values[:8]\n    idle = values[3] + (values[4] if len(values) > 4 else 0)  # idle + iowait\n    total = sum(values)\n    return idle, total\n\n\ndef calculate_usage(first, second):\n    \"\"\"Calculate CPU usage % between two (idle, total) samples.\"\"\"\n    idle_delta = second[0] - first[0]\n    total_delta = second[1] - first[1]\n    if total_delta <= 0:\n        return 0.0\n    return round((1 - idle_delta / total_delta) * 100, 1)\n\n\ndef read_load_average(path=PROC_LOADAVG):\n    \"\"\"Return the 1, 5 and 15 minute load averages.\"\"\"\n    with open(path, encoding=\"utf-8\") as f:\n        one, five, fifteen = (float(v) for v in f.read().split()[:3])\n    return {\"1min\": one, \"5min\": five, \"15min\": fifteen}\n\n\ndef get_cpu_usage(interval=1.0, stat_path=PROC_STAT, loadavg_path=PROC_LOADAVG):\n    \"\"\"Return CPU usage %, core count and load averages.\"\"\"\n    first = read_cpu_times(stat_path)\n    time.sleep(interval)\n    second = read_cpu_times(stat_path)\n    return {\n        \"usage_percent\": calculate_usage(first, second),\n        \"cores\": os.cpu_count() or 1,\n        \"load_average\": read_load_average(loadavg_path),\n    }\n", "health_monitor/memory.py": "\"\"\"RAM and swap usage, read from /proc/meminfo.\n\n\"Used\" memory follows the same rule as the `free` command:\n    used = MemTotal - MemAvailable\nMemAvailable already accounts for reclaimable cache and buffers.\n\"\"\"\n\nPROC_MEMINFO = \"/proc/meminfo\"\n\n\ndef read_meminfo(path=PROC_MEMINFO):\n    \"\"\"Parse /proc/meminfo into a dict of values in bytes.\"\"\"\n    info = {}\n    with open(path, encoding=\"utf-8\") as f:\n        for line in f:\n            key, _, rest = line.partition(\":\")\n            parts = rest.split()\n            if not parts:\n                continue\n            value = int(parts[0])\n            if len(parts) > 1 and parts[1].lower() == \"kb\":\n                value *= 1024\n            info[key.strip()] = value\n    return info\n\n\ndef _percent(part, whole):\n    return round(part / whole * 100, 1) if whole else 0.0\n\n\ndef get_memory_usage(path=PROC_MEMINFO):\n    \"\"\"Return RAM and swap usage in bytes and percent.\"\"\"\n    info = read_meminfo(path)\n    total = info[\"MemTotal\"]\n    # MemAvailable exists on kernels 3.14+; fall back to free + buffers + cached.\n    available = info.get(\n        \"MemAvailable\",\n        info.get(\"MemFree\", 0) + info.get(\"Buffers\", 0) + info.get(\"Cached\", 0),\n    )\n    used = total - available\n\n    swap_total = info.get(\"SwapTotal\", 0)\n    swap_used = swap_total - info.get(\"SwapFree\", 0)\n\n    return {\n        \"total\": total,\n        \"used\": used,\n        \"available\": available,\n        \"usage_percent\": _percent(used, total),\n        \"swap_total\": swap_total,\n        \"swap_used\": swap_used,\n        \"swap_percent\": _percent(swap_used, swap_total),\n    }\n", "health_monitor/disk.py": "\"\"\"Disk utilization for one or more mount points, using shutil.disk_usage.\"\"\"\n\nimport shutil\n\n\ndef get_disk_usage(paths=(\"/\",)):\n    \"\"\"Return total/used/free bytes and usage % for each path.\"\"\"\n    results = []\n    for path in paths:\n        try:\n            usage = shutil.disk_usage(path)\n        except (FileNotFoundError, PermissionError, OSError) as exc:\n            results.append({\"path\": path, \"error\": str(exc)})\n            continue\n        percent = round(usage.used / usage.total * 100, 1) if usage.total else 0.0\n        results.append(\n            {\n                \"path\": path,\n                \"total\": usage.total,\n                \"used\": usage.used,\n                \"free\": usage.free,\n                \"usage_percent\": percent,\n            }\n        )\n    return results\n", "health_monitor/sysinfo.py": "\"\"\"System information: hostname, OS, kernel, architecture, uptime, IP, Python.\"\"\"\n\nimport platform\nimport socket\n\nPROC_UPTIME = \"/proc/uptime\"\nOS_RELEASE = \"/etc/os-release\"\n\n\ndef read_os_name(path=OS_RELEASE):\n    \"\"\"Return PRETTY_NAME from /etc/os-release, e.g. 'Ubuntu 24.04 LTS'.\"\"\"\n    try:\n        with open(path, encoding=\"utf-8\") as f:\n            for line in f:\n                if line.startswith(\"PRETTY_NAME=\"):\n                    return line.split(\"=\", 1)[1].strip().strip('\"')\n    except OSError:\n        pass\n    return f\"{platform.system()} {platform.release()}\"\n\n\ndef read_uptime_seconds(path=PROC_UPTIME):\n    \"\"\"Return system uptime in seconds, or None if unavailable.\"\"\"\n    try:\n        with open(path, encoding=\"utf-8\") as f:\n            return float(f.read().split()[0])\n    except (OSError, ValueError, IndexError):\n        return None\n\n\ndef format_uptime(seconds):\n    \"\"\"Turn seconds into '3 days, 4 hours, 5 minutes'.\"\"\"\n    if seconds is None:\n        return \"unknown\"\n    seconds = int(seconds)\n    days, seconds = divmod(seconds, 86400)\n    hours, seconds = divmod(seconds, 3600)\n    minutes = seconds // 60\n    parts = []\n    if days:\n        parts.append(f\"{days} day{'s' if days != 1 else ''}\")\n    if hours:\n        parts.append(f\"{hours} hour{'s' if hours != 1 else ''}\")\n    parts.append(f\"{minutes} minute{'s' if minutes != 1 else ''}\")\n    return \", \".join(parts)\n\n\ndef get_ip_address():\n    \"\"\"Return the primary IPv4 address (no packets are actually sent).\"\"\"\n    try:\n        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:\n            s.connect((\"8.8.8.8\", 80))\n            return s.getsockname()[0]\n    except OSError:\n        return \"127.0.0.1\"\n\n\ndef get_system_info(os_release_path=OS_RELEASE, uptime_path=PROC_UPTIME):\n    \"\"\"Collect basic system information.\"\"\"\n    uptime = read_uptime_seconds(uptime_path)\n    return {\n        \"hostname\": socket.gethostname(),\n        \"os\": read_os_name(os_release_path),\n        \"kernel\": platform.release(),\n        \"architecture\": platform.machine(),\n        \"ip_address\": get_ip_address(),\n        \"uptime_seconds\": uptime,\n        \"uptime\": format_uptime(uptime),\n        \"python_version\": platform.python_version(),\n    }\n", "health_monitor/report.py": "\"\"\"Build the health report, evaluate thresholds and save it to a log file.\"\"\"\n\nimport json\nimport logging\nimport os\nfrom datetime import datetime\nfrom logging.handlers import RotatingFileHandler\n\nOK, WARNING, CRITICAL = \"OK\", \"WARNING\", \"CRITICAL\"\nSEVERITY = {OK: 0, WARNING: 1, CRITICAL: 2}\n\nDEFAULT_THRESHOLDS = {\n    \"cpu\": {\"warning\": 75.0, \"critical\": 90.0},\n    \"memory\": {\"warning\": 75.0, \"critical\": 90.0},\n    \"disk\": {\"warning\": 80.0, \"critical\": 90.0},\n}\n\n\ndef evaluate(value, warning, critical):\n    \"\"\"Return OK / WARNING / CRITICAL for a usage percentage.\"\"\"\n    if value >= critical:\n        return CRITICAL\n    if value >= warning:\n        return WARNING\n    return OK\n\n\ndef human_bytes(num):\n    \"\"\"Format bytes as a readable size, e.g. 7.6 GB.\"\"\"\n    for unit in (\"B\", \"KB\", \"MB\", \"GB\", \"TB\"):\n        if abs(num) < 1024 or unit == \"TB\":\n            return f\"{num:.1f} {unit}\" if unit != \"B\" else f\"{int(num)} B\"\n        num /= 1024\n    return f\"{num:.1f} TB\"\n\n\ndef build_report(system, cpu, memory, disks, thresholds=None, timestamp=None):\n    \"\"\"Combine all checks into one report dict with an overall status.\"\"\"\n    t = thresholds or DEFAULT_THRESHOLDS\n    timestamp = timestamp or datetime.now().strftime(\"%Y-%m-%d %H:%M:%S\")\n\n    cpu_status = evaluate(cpu[\"usage_percent\"], **t[\"cpu\"])\n    mem_status = evaluate(memory[\"usage_percent\"], **t[\"memory\"])\n    for d in disks:\n        d[\"status\"] = (\n            CRITICAL if \"error\" in d else evaluate(d[\"usage_percent\"], **t[\"disk\"])\n        )\n\n    statuses = [cpu_status, mem_status] + [d[\"status\"] for d in disks]\n    overall = max(statuses, key=lambda s: SEVERITY[s])\n\n    return {\n        \"timestamp\": timestamp,\n        \"overall_status\": overall,\n        \"system\": system,\n        \"cpu\": {**cpu, \"status\": cpu_status},\n        \"memory\": {**memory, \"status\": mem_status},\n        \"disks\": disks,\n        \"thresholds\": t,\n    }\n\n\ndef format_report(report):\n    \"\"\"Render the report as a readable text block.\"\"\"\n    s, c, m = report[\"system\"], report[\"cpu\"], report[\"memory\"]\n    la = c[\"load_average\"]\n    line = \"=\" * 60\n    out = [\n        line,\n        \"              LINUX SERVER HEALTH REPORT\",\n        line,\n        f\"Generated     : {report['timestamp']}\",\n        f\"Overall status: {report['overall_status']}\",\n        \"\",\n        \"[ SYSTEM INFORMATION ]\",\n        f\"  Hostname     : {s['hostname']}\",\n        f\"  OS           : {s['os']}\",\n        f\"  Kernel       : {s['kernel']}\",\n        f\"  Architecture : {s['architecture']}\",\n        f\"  IP address   : {s['ip_address']}\",\n        f\"  Uptime       : {s['uptime']}\",\n        f\"  Python       : {s['python_version']}\",\n        \"\",\n        f\"[ CPU ]                                   {c['status']}\",\n        f\"  Usage        : {c['usage_percent']:.1f} %\",\n        f\"  Cores        : {c['cores']}\",\n        f\"  Load average : {la['1min']:.2f} (1m)  {la['5min']:.2f} (5m)  \"\n        f\"{la['15min']:.2f} (15m)\",\n        \"\",\n        f\"[ MEMORY ]                                {m['status']}\",\n        f\"  Usage        : {m['usage_percent']:.1f} %\",\n        f\"  Used / Total : {human_bytes(m['used'])} / {human_bytes(m['total'])}\",\n        f\"  Available    : {human_bytes(m['available'])}\",\n        f\"  Swap         : {human_bytes(m['swap_used'])} / \"\n        f\"{human_bytes(m['swap_total'])} ({m['swap_percent']:.1f} %)\",\n        \"\",\n        \"[ DISK ]\",\n    ]\n    for d in report[\"disks\"]:\n        if \"error\" in d:\n            out.append(f\"  {d['path']:<12} : ERROR - {d['error']}    {d['status']}\")\n            continue\n        out.append(\n            f\"  {d['path']:<12} : {d['usage_percent']:.1f} %  \"\n            f\"({human_bytes(d['used'])} used of {human_bytes(d['total'])}, \"\n            f\"{human_bytes(d['free'])} free)    {d['status']}\"\n        )\n\n    warnings = _collect_alerts(report)\n    out += [\"\", \"[ ALERTS ]\"]\n    out += [f\"  - {w}\" for w in warnings] if warnings else [\"  None - all checks passed.\"]\n    out.append(line)\n    return \"\\n\".join(out)\n\n\ndef _collect_alerts(report):\n    alerts = []\n    t = report[\"thresholds\"]\n    if report[\"cpu\"][\"status\"] != OK:\n        alerts.append(\n            f\"CPU usage {report['cpu']['usage_percent']:.1f}% is {report['cpu']['status']}\"\n            f\" (warning {t['cpu']['warning']}%, critical {t['cpu']['critical']}%)\"\n        )\n    if report[\"memory\"][\"status\"] != OK:\n        alerts.append(\n            f\"Memory usage {report['memory']['usage_percent']:.1f}% is \"\n            f\"{report['memory']['status']} (warning {t['memory']['warning']}%, \"\n            f\"critical {t['memory']['critical']}%)\"\n        )\n    for d in report[\"disks\"]:\n        if \"error\" in d:\n            alerts.append(f\"Disk {d['path']} could not be read: {d['error']}\")\n        elif d[\"status\"] != OK:\n            alerts.append(\n                f\"Disk {d['path']} usage {d['usage_percent']:.1f}% is {d['status']}\"\n                f\" (warning {t['disk']['warning']}%, critical {t['disk']['critical']}%)\"\n            )\n    return alerts\n\n\ndef get_logger(log_file, max_bytes=1_000_000, backups=5):\n    \"\"\"Logger that appends to log_file and rotates it at max_bytes.\"\"\"\n    os.makedirs(os.path.dirname(os.path.abspath(log_file)), exist_ok=True)\n    logger = logging.getLogger(f\"health_monitor:{os.path.abspath(log_file)}\")\n    logger.setLevel(logging.INFO)\n    logger.propagate = False\n    if not logger.handlers:\n        handler = RotatingFileHandler(\n            log_file, maxBytes=max_bytes, backupCount=backups, encoding=\"utf-8\"\n        )\n        handler.setFormatter(logging.Formatter(\"%(message)s\"))\n        logger.addHandler(handler)\n    return logger\n\n\ndef save_report(report, log_file, as_json=False):\n    \"\"\"Append the report to log_file (text block or one JSON line).\"\"\"\n    logger = get_logger(log_file)\n    text = json.dumps(report) if as_json else format_report(report) + \"\\n\"\n    logger.info(text)\n    for h in logger.handlers:\n        h.flush()\n    return os.path.abspath(log_file)\n", "tests/test_health_monitor.py": "\"\"\"Unit tests. Run with:  python3 -m unittest discover -s tests -v\n\nThe tests use saved copies of /proc files in tests/fixtures, so the parsing\nlogic can be checked on any machine.\n\"\"\"\n\nimport json\nimport os\nimport tempfile\nimport unittest\nfrom unittest import mock\n\nfrom health_monitor import cpu, disk, memory, report, sysinfo\n\nFIX = os.path.join(os.path.dirname(__file__), \"fixtures\")\n\n\ndef fx(name):\n    return os.path.join(FIX, name)\n\n\nclass TestCPU(unittest.TestCase):\n    def test_read_cpu_times(self):\n        idle, total = cpu.read_cpu_times(fx(\"stat_1\"))\n        self.assertEqual(idle, 8500)   # idle 8000 + iowait 500\n        self.assertEqual(total, 10000)\n\n    def test_calculate_usage(self):\n        first = cpu.read_cpu_times(fx(\"stat_1\"))\n        second = cpu.read_cpu_times(fx(\"stat_2\"))\n        # total delta 1000, idle delta 600 -> 40% busy\n        self.assertEqual(cpu.calculate_usage(first, second), 40.0)\n\n    def test_calculate_usage_no_change(self):\n        self.assertEqual(cpu.calculate_usage((10, 100), (10, 100)), 0.0)\n\n    def test_load_average(self):\n        la = cpu.read_load_average(fx(\"loadavg\"))\n        self.assertEqual(la, {\"1min\": 0.52, \"5min\": 0.38, \"15min\": 0.30})\n\n    def test_get_cpu_usage(self):\n        samples = iter([(8500, 10000), (9100, 11000)])\n        with mock.patch.object(cpu, \"read_cpu_times\", side_effect=lambda p: next(samples)), \\\n             mock.patch.object(cpu.time, \"sleep\"):\n            result = cpu.get_cpu_usage(interval=0, loadavg_path=fx(\"loadavg\"))\n        self.assertEqual(result[\"usage_percent\"], 40.0)\n        self.assertGreaterEqual(result[\"cores\"], 1)\n\n\nclass TestMemory(unittest.TestCase):\n    def test_memory_usage(self):\n        m = memory.get_memory_usage(fx(\"meminfo\"))\n        self.assertEqual(m[\"total\"], 8000000 * 1024)\n        self.assertEqual(m[\"available\"], 2000000 * 1024)\n        self.assertEqual(m[\"used\"], 6000000 * 1024)\n        self.assertEqual(m[\"usage_percent\"], 75.0)\n        self.assertEqual(m[\"swap_percent\"], 25.0)\n\n    def test_fallback_without_memavailable(self):\n        with tempfile.NamedTemporaryFile(\"w\", delete=False, suffix=\".txt\") as f:\n            f.write(\"MemTotal: 1000 kB\\nMemFree: 200 kB\\nBuffers: 100 kB\\nCached: 200 kB\\n\")\n        try:\n            m = memory.get_memory_usage(f.name)\n            self.assertEqual(m[\"usage_percent\"], 50.0)\n            self.assertEqual(m[\"swap_percent\"], 0.0)\n        finally:\n            os.remove(f.name)\n\n\nclass TestDisk(unittest.TestCase):\n    def test_disk_usage(self):\n        fake = mock.Mock(total=100, used=85, free=15)\n        with mock.patch.object(disk.shutil, \"disk_usage\", return_value=fake):\n            d = disk.get_disk_usage([\"/\"])[0]\n        self.assertEqual(d[\"usage_percent\"], 85.0)\n        self.assertEqual(d[\"free\"], 15)\n\n    def test_missing_path(self):\n        d = disk.get_disk_usage([\"/definitely/not/a/real/path\"])[0]\n        self.assertIn(\"error\", d)\n\n\nclass TestSysInfo(unittest.TestCase):\n    def test_os_name(self):\n        self.assertEqual(sysinfo.read_os_name(fx(\"os-release\")), \"Ubuntu 24.04 LTS\")\n\n    def test_uptime(self):\n        seconds = sysinfo.read_uptime_seconds(fx(\"uptime\"))\n        self.assertEqual(sysinfo.format_uptime(seconds), \"3 days, 4 hours, 0 minutes\")\n\n    def test_format_uptime_unknown(self):\n        self.assertEqual(sysinfo.format_uptime(None), \"unknown\")\n\n    def test_get_system_info_keys(self):\n        info = sysinfo.get_system_info(fx(\"os-release\"), fx(\"uptime\"))\n        for key in (\"hostname\", \"os\", \"kernel\", \"architecture\", \"ip_address\", \"uptime\"):\n            self.assertIn(key, info)\n\n\ndef sample_report(cpu_pct=40.0, mem_pct=75.0, disk_pct=50.0):\n    return report.build_report(\n        system={\"hostname\": \"web-01\", \"os\": \"Ubuntu 24.04 LTS\", \"kernel\": \"6.8.0\",\n                \"architecture\": \"x86_64\", \"ip_address\": \"10.0.0.5\",\n                \"uptime\": \"3 days\", \"python_version\": \"3.12.3\"},\n        cpu={\"usage_percent\": cpu_pct, \"cores\": 2,\n             \"load_average\": {\"1min\": 0.5, \"5min\": 0.4, \"15min\": 0.3}},\n        memory={\"total\": 8 * 1024**3, \"used\": 6 * 1024**3, \"available\": 2 * 1024**3,\n                \"usage_percent\": mem_pct, \"swap_total\": 0, \"swap_used\": 0,\n                \"swap_percent\": 0.0},\n        disks=[{\"path\": \"/\", \"total\": 100 * 1024**3, \"used\": 50 * 1024**3,\n                \"free\": 50 * 1024**3, \"usage_percent\": disk_pct}],\n        timestamp=\"2026-11-10 10:00:00\",\n    )\n\n\nclass TestReport(unittest.TestCase):\n    def test_evaluate(self):\n        self.assertEqual(report.evaluate(50, 75, 90), report.OK)\n        self.assertEqual(report.evaluate(75, 75, 90), report.WARNING)\n        self.assertEqual(report.evaluate(95, 75, 90), report.CRITICAL)\n\n    def test_overall_status_is_worst(self):\n        self.assertEqual(sample_report()[\"overall_status\"], report.WARNING)  # memory 75%\n        self.assertEqual(sample_report(mem_pct=10)[\"overall_status\"], report.OK)\n        self.assertEqual(sample_report(disk_pct=95)[\"overall_status\"], report.CRITICAL)\n\n    def test_human_bytes(self):\n        self.assertEqual(report.human_bytes(512), \"512 B\")\n        self.assertEqual(report.human_bytes(1536), \"1.5 KB\")\n        self.assertEqual(report.human_bytes(8 * 1024**3), \"8.0 GB\")\n\n    def test_format_report(self):\n        text = report.format_report(sample_report())\n        self.assertIn(\"LINUX SERVER HEALTH REPORT\", text)\n        self.assertIn(\"web-01\", text)\n        self.assertIn(\"Memory usage 75.0% is WARNING\", text)\n\n    def test_save_report_appends(self):\n        with tempfile.TemporaryDirectory() as tmp:\n            log = os.path.join(tmp, \"logs\", \"health.log\")\n            report.save_report(sample_report(), log)\n            report.save_report(sample_report(), log)\n            with open(log, encoding=\"utf-8\") as f:\n                content = f.read()\n            self.assertEqual(content.count(\"LINUX SERVER HEALTH REPORT\"), 2)\n            for h in report.get_logger(log).handlers:\n                h.close()\n\n    def test_save_report_json(self):\n        with tempfile.TemporaryDirectory() as tmp:\n            log = os.path.join(tmp, \"health.jsonl\")\n            report.save_report(sample_report(), log, as_json=True)\n            with open(log, encoding=\"utf-8\") as f:\n                data = json.loads(f.readline())\n            self.assertEqual(data[\"system\"][\"hostname\"], \"web-01\")\n            for h in report.get_logger(log).handlers:\n                h.close()\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n", "scripts/demo_with_fixtures.py": "#!/usr/bin/env python3\n\"\"\"Run the full report pipeline on any OS using the sample /proc files.\n\nUseful for a demo on Windows/macOS. On a real Linux server use\n`python3 -m health_monitor` instead.\n\n    python scripts/demo_with_fixtures.py\n\"\"\"\n\nimport os\nimport sys\n\nROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\nsys.path.insert(0, ROOT)\n\nfrom health_monitor import cpu, disk, memory, report, sysinfo  # noqa: E402\n\nFIX = os.path.join(ROOT, \"tests\", \"fixtures\")\n\n\ndef main():\n    first = cpu.read_cpu_times(os.path.join(FIX, \"stat_1\"))\n    second = cpu.read_cpu_times(os.path.join(FIX, \"stat_2\"))\n    cpu_data = {\n        \"usage_percent\": cpu.calculate_usage(first, second),\n        \"cores\": os.cpu_count() or 1,\n        \"load_average\": cpu.read_load_average(os.path.join(FIX, \"loadavg\")),\n    }\n    system = sysinfo.get_system_info(\n        os.path.join(FIX, \"os-release\"), os.path.join(FIX, \"uptime\")\n    )\n    disk_path = os.path.abspath(os.sep)  # \"/\" on Linux, \"C:\\\" on Windows\n    rep = report.build_report(\n        system=system,\n        cpu=cpu_data,\n        memory=memory.get_memory_usage(os.path.join(FIX, \"meminfo\")),\n        disks=disk.get_disk_usage([disk_path]),\n    )\n    log_file = os.path.join(ROOT, \"logs\", \"demo_health_report.log\")\n    path = report.save_report(rep, log_file)\n    print(report.format_report(rep))\n    print(f\"\\nReport saved to {path}\")\n    return report.SEVERITY[rep[\"overall_status\"]]\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n", "scripts/install_cron.sh": "#!/usr/bin/env bash\n# Schedule the health monitor to run every 5 minutes with cron.\n# Usage:  bash scripts/install_cron.sh [minutes]\nset -euo pipefail\n\nMINUTES=\"${1:-5}\"\nPROJECT_DIR=\"$(cd \"$(dirname \"$0\")/..\" && pwd)\"\nPYTHON=\"$(command -v python3)\"\nJOB=\"*/${MINUTES} * * * * cd ${PROJECT_DIR} && ${PYTHON} -m health_monitor --quiet >> ${PROJECT_DIR}/logs/cron.log 2>&1\"\n\n# Replace any earlier entry for this project, then add the new one.\n( crontab -l 2>/dev/null | grep -v \"${PROJECT_DIR} && ${PYTHON} -m health_monitor\" || true; echo \"${JOB}\" ) | crontab -\n\necho \"Installed cron job:\"\necho \"  ${JOB}\"\necho \"Reports will be appended to ${PROJECT_DIR}/logs/health_report.log\"\n", ".github/workflows/python-app.yml": "# This workflow will install Python dependencies, run tests and lint with a single version of Python\n# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python\n\nname: Python application\n\non:\n  push:\n    branches: [ \"main\" ]\n  pull_request:\n    branches: [ \"main\" ]\n\npermissions:\n  contents: read\n\njobs:\n  build:\n\n    runs-on: ubuntu-latest\n\n    steps:\n    - uses: actions/checkout@v4\n    - name: Set up Python 3.10\n      uses: actions/setup-python@v3\n      with:\n        python-version: \"3.10\"\n    - name: Install dependencies\n      run: |\n        python -m pip install --upgrade pip\n        pip install flake8 pytest\n        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi\n    - name: Lint with flake8\n      run: |\n        # stop the build if there are Python syntax errors or undefined names\n        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics\n        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide\n        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics\n    - name: Test with pytest\n      run: |\n        pytest\n    - name: Run health monitor on Ubuntu\n      run: |\n        # 0 = OK, 1 = WARNING, 2 = CRITICAL are all valid reports; 3+ means the tool failed\n        python -m health_monitor --disk / || status=$?\n        echo \"Exit code: ${status:-0} (0=OK, 1=WARNING, 2=CRITICAL)\"\n        test \"${status:-0}\" -le 2\n    - name: Upload health report log\n      uses: actions/upload-artifact@v4\n      with:\n        name: health-report\n        path: logs/health_report.log\n", "monitor.py": "#!/usr/bin/env python3\n\"\"\"Convenience launcher:  python3 monitor.py [options]\n\nSame as  python3 -m health_monitor [options]\n\"\"\"\n\nimport sys\n\nfrom health_monitor.__main__ import main\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n", "pytest.ini": "[pytest]\npythonpath = .\ntestpaths = tests\n", "Jenkinsfile": "// CI/CD pipeline for the Linux Server Health Monitor.\n//\n//   Checkout -> Python setup -> Version -> Lint -> Test (Maven + pytest)\n//   -> SonarQube analysis -> Quality Gate -> Package (Maven zip)\n//   -> Smoke test on Linux -> Deploy to Nexus\n//\n// Jenkins setup this file expects (see docs/CICD_SETUP.md):\n//   - SonarQube server named   'sonarqube'      (Manage Jenkins > System)\n//   - SonarQube Scanner tool   'sonar-scanner'  (Manage Jenkins > Tools)\n//   - Credentials 'nexus-credentials' (username + password for Nexus)\n//   - python3, python3-venv, maven and unzip on the agent (ci/jenkins/Dockerfile)\n\npipeline {\n    agent any\n\n    parameters {\n        booleanParam(\n            name: 'RELEASE',\n            defaultValue: false,\n            description: 'Deploy a release (e.g. 1.0.0-12) to maven-releases. Unticked deploys 1.0.0-SNAPSHOT to maven-snapshots.'\n        )\n    }\n\n    options {\n        timestamps()\n        disableConcurrentBuilds()\n        buildDiscarder(logRotator(numToKeepStr: '20'))\n        timeout(time: 30, unit: 'MINUTES')\n    }\n\n    environment {\n        NEXUS_URL = 'http://nexus:8081'\n    }\n\n    stages {\n        stage('Checkout') {\n            steps {\n                checkout scm\n            }\n        }\n\n        stage('Set up Python') {\n            steps {\n                sh '''\n                    python3 -m venv .venv\n                    .venv/bin/pip install --quiet --upgrade pip\n                    .venv/bin/pip install --quiet pytest pytest-cov flake8\n                    .venv/bin/python --version\n                '''\n            }\n        }\n\n        stage('Version') {\n            steps {\n                script {\n                    def base = sh(\n                        returnStdout: true,\n                        script: \".venv/bin/python -c 'import health_monitor; print(health_monitor.__version__)'\"\n                    ).trim()\n                    env.APP_VERSION = params.RELEASE ? \"${base}-${env.BUILD_NUMBER}\" : \"${base}-SNAPSHOT\"\n                    currentBuild.displayName = \"#${env.BUILD_NUMBER} ${env.APP_VERSION}\"\n                }\n                sh 'mvn -B -q org.codehaus.mojo:versions-maven-plugin:2.16.2:set -DnewVersion=\"$APP_VERSION\" -DgenerateBackupPoms=false'\n                echo \"Building version ${env.APP_VERSION}\"\n            }\n        }\n\n        stage('Lint') {\n            steps {\n                sh '''\n                    mkdir -p target\n                    # Fail the build on syntax errors and undefined names.\n                    .venv/bin/flake8 . --exclude .venv,target --count --select=E9,F63,F7,F82 --show-source --statistics\n                    # Style warnings only, saved for SonarQube.\n                    .venv/bin/flake8 . --exclude .venv,target --exit-zero --max-line-length=127 --output-file=target/flake8.txt\n                '''\n            }\n        }\n\n        stage('Test') {\n            steps {\n                sh 'mvn -B test -Dpython.executable=\"$WORKSPACE/.venv/bin/python\"'\n            }\n            post {\n                always {\n                    junit allowEmptyResults: false, testResults: 'target/test-reports/*.xml'\n                }\n            }\n        }\n\n        stage('SonarQube Analysis') {\n            steps {\n                script {\n                    def scannerHome = tool 'sonar-scanner'\n                    withSonarQubeEnv('sonarqube') {\n                        sh \"${scannerHome}/bin/sonar-scanner -Dsonar.projectVersion=${env.APP_VERSION}\"\n                    }\n                }\n            }\n        }\n\n        stage('Quality Gate') {\n            steps {\n                // Needs a SonarQube webhook to http://jenkins:8080/sonarqube-webhook/\n                timeout(time: 5, unit: 'MINUTES') {\n                    waitForQualityGate abortPipeline: true\n                }\n            }\n        }\n\n        stage('Package') {\n            steps {\n                sh 'mvn -B package -DskipTests'\n                archiveArtifacts artifacts: 'target/*-dist.zip', fingerprint: true\n            }\n        }\n\n        stage('Smoke Test') {\n            steps {\n                // Unzip the package exactly as a server would and run a real health check.\n                sh '''\n                    rm -rf target/smoke && mkdir -p target/smoke\n                    unzip -q target/server-health-monitor-*-dist.zip -d target/smoke\n                    cd target/smoke/server-health-monitor-*/\n                    status=0\n                    python3 -m health_monitor --disk / || status=$?\n                    echo \"Health monitor exit code: $status (0=OK, 1=WARNING, 2=CRITICAL)\"\n                    test \"$status\" -le 2\n                '''\n            }\n        }\n\n        stage('Deploy to Nexus') {\n            steps {\n                withCredentials([usernamePassword(\n                    credentialsId: 'nexus-credentials',\n                    usernameVariable: 'NEXUS_USERNAME',\n                    passwordVariable: 'NEXUS_PASSWORD'\n                )]) {\n                    sh 'mvn -B -s ci/maven-settings.xml deploy -DskipTests -Dnexus.url=\"$NEXUS_URL\"'\n                }\n            }\n        }\n    }\n\n    post {\n        success {\n            script {\n                def repo = params.RELEASE ? 'maven-releases' : 'maven-snapshots'\n                echo \"Deployed server-health-monitor ${env.APP_VERSION} to ${env.NEXUS_URL}/#browse/browse:${repo}\"\n            }\n        }\n        failure {\n            echo 'Pipeline failed. Open the red stage in Stage View to see which step broke.'\n        }\n    }\n}\n", "pom.xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!--\n  Maven build for the Linux Server Health Monitor (a Python project).\n\n  Maven does not compile anything here. It drives the release lifecycle:\n    mvn test     -> runs the Python test suite with coverage (pytest)\n    mvn package  -> builds target/server-health-monitor-<version>-dist.zip\n    mvn deploy   -> uploads the pom and zip to Nexus (maven-releases / maven-snapshots)\n\n  The version comes from health_monitor/__init__.py. Jenkins sets it with\n  `mvn versions:set` before building, so the code and the artifact always match.\n-->\n<project xmlns=\"http://maven.apache.org/POM/4.0.0\"\n         xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n         xsi:schemaLocation=\"http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd\">\n  <modelVersion>4.0.0<\/modelVersion>\n\n  <groupId>com.samuelpremmm<\/groupId>\n  <artifactId>server-health-monitor<\/artifactId>\n  <version>1.0.0-SNAPSHOT<\/version>\n  <packaging>pom<\/packaging>\n\n  <name>Linux Server Health Monitor<\/name>\n  <description>Dependency-free Python tool that checks Linux CPU, memory, disk and system health and logs a report.<\/description>\n  <url>https://github.com/samuelpremmm/server-health-monitor<\/url>\n\n  <scm>\n    <url>https://github.com/samuelpremmm/server-health-monitor<\/url>\n    <connection>scm:git:https://github.com/samuelpremmm/server-health-monitor.git<\/connection>\n  <\/scm>\n\n  <properties>\n    <project.build.sourceEncoding>UTF-8<\/project.build.sourceEncoding>\n    <!-- Python used to run the tests. Jenkins passes the virtualenv's python. -->\n    <python.executable>python3<\/python.executable>\n    <skipTests>false<\/skipTests>\n    <!-- Nexus base URL. \"nexus\" is the container name in ci/docker-compose.yml. -->\n    <nexus.url>http://nexus:8081<\/nexus.url>\n  <\/properties>\n\n  <distributionManagement>\n    <repository>\n      <id>nexus-releases<\/id>\n      <name>Nexus releases<\/name>\n      <url>${nexus.url}/repository/maven-releases/<\/url>\n    <\/repository>\n    <snapshotRepository>\n      <id>nexus-snapshots<\/id>\n      <name>Nexus snapshots<\/name>\n      <url>${nexus.url}/repository/maven-snapshots/<\/url>\n    <\/snapshotRepository>\n  <\/distributionManagement>\n\n  <build>\n    <plugins>\n      <!-- test phase: run pytest with JUnit XML and coverage reports for Jenkins and SonarQube -->\n      <plugin>\n        <groupId>org.codehaus.mojo<\/groupId>\n        <artifactId>exec-maven-plugin<\/artifactId>\n        <version>3.1.0<\/version>\n        <executions>\n          <execution>\n            <id>python-tests<\/id>\n            <phase>test<\/phase>\n            <goals>\n              <goal>exec<\/goal>\n            <\/goals>\n            <configuration>\n              <skip>${skipTests}<\/skip>\n              <executable>${python.executable}<\/executable>\n              <workingDirectory>${project.basedir}<\/workingDirectory>\n              <arguments>\n                <argument>-m<\/argument>\n                <argument>pytest<\/argument>\n                <argument>--junitxml=${project.build.directory}/test-reports/junit.xml<\/argument>\n                <argument>--cov=health_monitor<\/argument>\n                <argument>--cov-report=xml:${project.build.directory}/coverage.xml<\/argument>\n                <argument>--cov-report=term<\/argument>\n              <\/arguments>\n            <\/configuration>\n          <\/execution>\n        <\/executions>\n      <\/plugin>\n\n      <!-- package phase: zip the tool so it can be downloaded from Nexus and run on any Linux server -->\n      <plugin>\n        <groupId>org.apache.maven.plugins<\/groupId>\n        <artifactId>maven-assembly-plugin<\/artifactId>\n        <version>3.7.1<\/version>\n        <configuration>\n          <descriptors>\n            <descriptor>src/assembly/distribution.xml<\/descriptor>\n          <\/descriptors>\n        <\/configuration>\n        <executions>\n          <execution>\n            <id>make-distribution<\/id>\n            <phase>package<\/phase>\n            <goals>\n              <goal>single<\/goal>\n            <\/goals>\n          <\/execution>\n        <\/executions>\n      <\/plugin>\n\n      <!-- deploy phase: upload to Nexus -->\n      <plugin>\n        <groupId>org.apache.maven.plugins<\/groupId>\n        <artifactId>maven-deploy-plugin<\/artifactId>\n        <version>3.1.2<\/version>\n      <\/plugin>\n    <\/plugins>\n  <\/build>\n<\/project>\n", "sonar-project.properties": "# SonarQube analysis settings, read by sonar-scanner in the Jenkinsfile.\nsonar.projectKey=server-health-monitor\nsonar.projectName=Linux Server Health Monitor\nsonar.sourceEncoding=UTF-8\n\n# Code and tests\nsonar.sources=health_monitor,scripts,monitor.py\nsonar.tests=tests\nsonar.python.version=3.8, 3.9, 3.10, 3.11, 3.12\n\n# Reports produced by the Lint and Test stages\nsonar.python.coverage.reportPaths=target/coverage.xml\nsonar.python.xunit.reportPath=target/test-reports/junit.xml\nsonar.python.flake8.reportPaths=target/flake8.txt\n\n# Keep build output and the virtualenv out of the analysis\nsonar.exclusions=.venv/**,target/**,showcase/**\n", "src/assembly/distribution.xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!-- Builds server-health-monitor-<version>-dist.zip: everything needed to run the tool on a Linux server. -->\n<assembly xmlns=\"http://maven.apache.org/ASSEMBLY/2.2.0\"\n          xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n          xsi:schemaLocation=\"http://maven.apache.org/ASSEMBLY/2.2.0 https://maven.apache.org/xsd/assembly-2.2.0.xsd\">\n  <id>dist<\/id>\n  <formats>\n    <format>zip<\/format>\n  <\/formats>\n  <baseDirectory>${project.artifactId}-${project.version}<\/baseDirectory>\n\n  <fileSets>\n    <fileSet>\n      <directory>${project.basedir}/health_monitor<\/directory>\n      <outputDirectory>health_monitor<\/outputDirectory>\n      <includes>\n        <include>**/*.py<\/include>\n      <\/includes>\n      <excludes>\n        <exclude>**/__pycache__/**<\/exclude>\n      <\/excludes>\n    <\/fileSet>\n    <fileSet>\n      <directory>${project.basedir}/scripts<\/directory>\n      <outputDirectory>scripts<\/outputDirectory>\n      <includes>\n        <include>*.sh<\/include>\n      <\/includes>\n      <fileMode>0755<\/fileMode>\n    <\/fileSet>\n    <fileSet>\n      <directory>${project.basedir}/scripts<\/directory>\n      <outputDirectory>scripts<\/outputDirectory>\n      <includes>\n        <include>*.py<\/include>\n      <\/includes>\n    <\/fileSet>\n    <fileSet>\n      <directory>${project.basedir}/docs<\/directory>\n      <outputDirectory>docs<\/outputDirectory>\n    <\/fileSet>\n    <fileSet>\n      <directory>${project.basedir}/logs<\/directory>\n      <outputDirectory>logs<\/outputDirectory>\n      <includes>\n        <include>.gitkeep<\/include>\n      <\/includes>\n    <\/fileSet>\n  <\/fileSets>\n\n  <files>\n    <file>\n      <source>${project.basedir}/monitor.py<\/source>\n    <\/file>\n    <file>\n      <source>${project.basedir}/README.md<\/source>\n    <\/file>\n  <\/files>\n<\/assembly>\n", "ci/docker-compose.yml": "# Local CI/CD stack: Jenkins + SonarQube (with PostgreSQL) + Nexus.\n#\n#   cd ci\n#   docker compose up -d --build\n#\n#   Jenkins    http://localhost:8080\n#   SonarQube  http://localhost:9000\n#   Nexus      http://localhost:8081\n#\n# Inside this network the containers reach each other by name:\n#   http://jenkins:8080   http://sonarqube:9000   http://nexus:8081\n#\n# Uses about 5-6 GB of RAM while running. Stop with: docker compose stop\n# The database password below is for this local demo only.\n\nname: shm-cicd\n\nservices:\n  jenkins:\n    build: ./jenkins\n    image: shm-jenkins:local\n    container_name: jenkins\n    ports:\n      - \"8080:8080\"\n    volumes:\n      - jenkins_home:/var/jenkins_home\n    mem_limit: 2g\n    restart: unless-stopped\n\n  sonarqube-db:\n    image: postgres:16.4\n    container_name: sonarqube-db\n    environment:\n      POSTGRES_USER: sonar\n      POSTGRES_PASSWORD: sonar\n      POSTGRES_DB: sonarqube\n    volumes:\n      - sonarqube_db:/var/lib/postgresql/data\n    mem_limit: 512m\n    restart: unless-stopped\n\n  sonarqube:\n    image: sonarqube:10.6.0-community\n    container_name: sonarqube\n    depends_on:\n      - sonarqube-db\n    environment:\n      SONAR_JDBC_URL: jdbc:postgresql://sonarqube-db:5432/sonarqube\n      SONAR_JDBC_USERNAME: sonar\n      SONAR_JDBC_PASSWORD: sonar\n    ports:\n      - \"9000:9000\"\n    volumes:\n      - sonarqube_data:/opt/sonarqube/data\n      - sonarqube_extensions:/opt/sonarqube/extensions\n      - sonarqube_logs:/opt/sonarqube/logs\n    mem_limit: 3g\n    restart: unless-stopped\n\n  nexus:\n    image: sonatype/nexus3:3.70.1\n    container_name: nexus\n    environment:\n      INSTALL4J_ADD_VM_PARAMS: \"-Xms1g -Xmx1g -XX:MaxDirectMemorySize=1g\"\n    ports:\n      - \"8081:8081\"\n    volumes:\n      - nexus_data:/nexus-data\n    mem_limit: 2560m\n    restart: unless-stopped\n\nvolumes:\n  jenkins_home:\n  sonarqube_db:\n  sonarqube_data:\n  sonarqube_extensions:\n  sonarqube_logs:\n  nexus_data:\n", "ci/jenkins/Dockerfile": "# Jenkins LTS with the tools the pipeline needs: Python 3, venv, Maven and unzip,\n# plus the plugins listed in plugins.txt.\nFROM jenkins/jenkins:2.462.3-lts-jdk17\n\nUSER root\nRUN apt-get update \\\n && apt-get install -y --no-install-recommends python3 python3-venv python3-pip maven unzip \\\n && rm -rf /var/lib/apt/lists/*\n\nUSER jenkins\nCOPY plugins.txt /usr/share/jenkins/ref/plugins.txt\nRUN jenkins-plugin-cli --plugin-file /usr/share/jenkins/ref/plugins.txt\n", "ci/jenkins/plugins.txt": "workflow-aggregator\npipeline-stage-view\ngit\ngithub\ncredentials-binding\nsonar\njunit\ntimestamper\nws-cleanup\n", "ci/maven-settings.xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!--\n  Maven settings used by the Jenkins \"Deploy to Nexus\" stage.\n  No passwords are stored here: Jenkins injects NEXUS_USERNAME and NEXUS_PASSWORD\n  from the 'nexus-credentials' credential at build time.\n  The server ids match <distributionManagement> in pom.xml.\n-->\n<settings xmlns=\"http://maven.apache.org/SETTINGS/1.2.0\"\n          xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n          xsi:schemaLocation=\"http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd\">\n  <servers>\n    <server>\n      <id>nexus-releases<\/id>\n      <username>${env.NEXUS_USERNAME}<\/username>\n      <password>${env.NEXUS_PASSWORD}<\/password>\n    <\/server>\n    <server>\n      <id>nexus-snapshots<\/id>\n      <username>${env.NEXUS_USERNAME}<\/username>\n      <password>${env.NEXUS_PASSWORD}<\/password>\n    <\/server>\n  <\/servers>\n<\/settings>\n"}, "fixtures": ["loadavg", "meminfo", "os-release", "stat_1", "stat_2", "uptime"]}</script>
+<script>
+(function () {
+  "use strict";
+  var SRC = JSON.parse(document.getElementById("src-data").textContent);
+  var REPO = "https://github.com/samuelpremmm/server-health-monitor/blob/main/";
+  function $(id) { return document.getElementById(id); }
+  function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]; }); }
+
+  /* ---------- routing ---------- */
+  var VIEWS = ["overview", "report", "simulator", "architecture", "code", "tests", "pipeline", "jenkins", "deploy", "run", "about"];
+  var TITLES = { overview: "Dashboard", report: "Live report", simulator: "Simulator", architecture: "How it works", code: "Source code", tests: "Tests", pipeline: "CI pipeline", jenkins: "Jenkins CI/CD", deploy: "Where it runs", run: "Run it", about: "About" };
+  function show() {
+    var v = (location.hash || "").slice(1);
+    if (VIEWS.indexOf(v) < 0) v = "overview";
+    document.querySelectorAll(".view").forEach(function (s) { s.hidden = s.getAttribute("data-view") !== v; });
+    document.querySelectorAll("#nav a").forEach(function (a) {
+      var on = a.getAttribute("data-v") === v;
+      a.classList.toggle("active", on);
+      if (on) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+    });
+    $("top-title").textContent = TITLES[v];
+    closeMenu();
+    window.scrollTo(0, 0);
+  }
+  window.addEventListener("hashchange", show);
+
+  /* ---------- mobile menu ---------- */
+  function closeMenu() { $("side").classList.remove("open"); $("scrim").hidden = true; $("menu-btn").setAttribute("aria-expanded", "false"); }
+  $("menu-btn").addEventListener("click", function () { $("side").classList.add("open"); $("scrim").hidden = false; this.setAttribute("aria-expanded", "true"); });
+  $("scrim").addEventListener("click", closeMenu);
+
+  /* ---------- theme ---------- */
+  var modes = ["system", "light", "dark"], mode = "system";
+  try { mode = localStorage.getItem("shm-theme") || "system"; } catch (e) {}
+  function applyTheme() {
+    if (mode === "system") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme", mode);
+    $("theme-btn").textContent = "Theme: " + mode;
+  }
+  $("theme-btn").addEventListener("click", function () {
+    mode = modes[(modes.indexOf(mode) + 1) % 3];
+    try { localStorage.setItem("shm-theme", mode); } catch (e) {}
+    applyTheme();
+  });
+  applyTheme();
+
+  /* ---------- report helpers (port of report.py) ---------- */
+  var SEV = { OK: 0, WARNING: 1, CRITICAL: 2 };
+  function evaluate(v, w, c) { return v >= c ? "CRITICAL" : v >= w ? "WARNING" : "OK"; }
+  function hb(n) {
+    var u = ["B", "KB", "MB", "GB", "TB"];
+    for (var i = 0; i < u.length; i++) {
+      if (Math.abs(n) < 1024 || u[i] === "TB") return u[i] === "B" ? Math.trunc(n) + " B" : n.toFixed(1) + " " + u[i];
+      n /= 1024;
+    }
+  }
+  function pad(s, n) { s = String(s); while (s.length < n) s += " "; return s; }
+  function tag(st) { var c = st === "OK" ? "t-ok" : st === "WARNING" ? "t-warn" : "t-crit"; return '<span class="' + c + '">' + st + "</span>"; }
+  function fmtPy(n) { return Number.isInteger(n) ? n.toFixed(1) : String(n); }
+  function build(r) {
+    var t = r.thresholds;
+    r.cpu.status = evaluate(r.cpu.usage_percent, t.cpu.warning, t.cpu.critical);
+    r.memory.status = evaluate(r.memory.usage_percent, t.memory.warning, t.memory.critical);
+    r.disks.forEach(function (d) { d.status = evaluate(d.usage_percent, t.disk.warning, t.disk.critical); });
+    var all = [r.cpu.status, r.memory.status].concat(r.disks.map(function (d) { return d.status; }));
+    r.overall_status = all.reduce(function (a, b) { return SEV[b] > SEV[a] ? b : a; }, "OK");
+    return r;
+  }
+  function format(r) {
+    var s = r.system, c = r.cpu, m = r.memory, la = c.load_average, t = r.thresholds;
+    var L = '<span class="t-dim">' + "=".repeat(60) + "</span>";
+    var o = [L, '<span class="t-head">              LINUX SERVER HEALTH REPORT</span>', L,
+      "Generated     : " + r.timestamp, "Overall status: " + tag(r.overall_status), "",
+      '<span class="t-head">[ SYSTEM INFORMATION ]</span>',
+      "  Hostname     : " + esc(s.hostname), "  OS           : " + esc(s.os), "  Kernel       : " + esc(s.kernel),
+      "  Architecture : " + esc(s.architecture), "  IP address   : " + esc(s.ip_address), "  Uptime       : " + esc(s.uptime), "  Python       : " + esc(s.python_version), "",
+      '<span class="t-head">[ CPU ]</span>                                   ' + tag(c.status),
+      "  Usage        : " + c.usage_percent.toFixed(1) + " %", "  Cores        : " + c.cores,
+      "  Load average : " + la[0].toFixed(2) + " (1m)  " + la[1].toFixed(2) + " (5m)  " + la[2].toFixed(2) + " (15m)", "",
+      '<span class="t-head">[ MEMORY ]</span>                                ' + tag(m.status),
+      "  Usage        : " + m.usage_percent.toFixed(1) + " %",
+      "  Used / Total : " + hb(m.used) + " / " + hb(m.total), "  Available    : " + hb(m.total - m.used),
+      "  Swap         : " + hb(m.swap_used) + " / " + hb(m.swap_total) + " (" + (m.swap_total ? (m.swap_used / m.swap_total * 100) : 0).toFixed(1) + " %)", "",
+      '<span class="t-head">[ DISK ]</span>'];
+    r.disks.forEach(function (d) {
+      o.push("  " + pad(d.path, 12) + " : " + d.usage_percent.toFixed(1) + " %  (" + hb(d.used) + " used of " + hb(d.total) + ", " + hb(d.total - d.used) + " free)    " + tag(d.status));
+    });
+    var al = [];
+    if (c.status !== "OK") al.push("CPU usage " + c.usage_percent.toFixed(1) + "% is " + tag(c.status) + " (warning " + fmtPy(t.cpu.warning) + "%, critical " + fmtPy(t.cpu.critical) + "%)");
+    if (m.status !== "OK") al.push("Memory usage " + m.usage_percent.toFixed(1) + "% is " + tag(m.status) + " (warning " + fmtPy(t.memory.warning) + "%, critical " + fmtPy(t.memory.critical) + "%)");
+    r.disks.forEach(function (d) { if (d.status !== "OK") al.push("Disk " + d.path + " usage " + d.usage_percent.toFixed(1) + "% is " + tag(d.status) + " (warning " + fmtPy(t.disk.warning) + "%, critical " + fmtPy(t.disk.critical) + "%)"); });
+    o.push("", '<span class="t-head">[ ALERTS ]</span>');
+    if (al.length) al.forEach(function (a) { o.push("  - " + a); }); else o.push("  None - all checks passed.");
+    o.push(L);
+    return o.join("\n");
+  }
+  var GB = 1024 * 1024 * 1024, MB = 1024 * 1024;
+  var DEF = { cpu: { warning: 75, critical: 90 }, memory: { warning: 75, critical: 90 }, disk: { warning: 80, critical: 90 } };
+
+  /* ---------- live report ---------- */
+  var REPORTS = {
+    ci: {
+      cmd: "$ python -m health_monitor --disk /   ·   GitHub Actions, 10 Nov 2026 09:01 UTC",
+      note: "Real output copied from the GitHub Actions log (run 42787151947). Exit code 0.",
+      text: null,
+      data: { timestamp: "2026-11-10 09:01:14", thresholds: DEF,
+        system: { hostname: "runnervmwuk1x", os: "Ubuntu 26.04.1 LTS", kernel: "7.0.0-1019-azure", architecture: "x86_64", ip_address: "10.1.0.39", uptime: "0 minutes", python_version: "3.10.22" },
+        cpu: { usage_percent: 5.2, cores: 4, load_average: [1.69, 0.41, 0.14] },
+        memory: { usage_percent: 7.3, used: 1.1 * GB, total: 15.6 * GB, swap_used: 0, swap_total: 3.0 * GB },
+        disks: [{ path: "/", usage_percent: 39.5, used: 57.1 * GB, total: 144.3 * GB }] }
+    },
+    ec2: {
+      cmd: "$ python3 -m health_monitor   ·   web-01 (AWS EC2 sample)",
+      note: "Sample report from the README, showing how a WARNING looks. Exit code 1.",
+      data: { timestamp: "2026-11-10 10:00:00", thresholds: DEF,
+        system: { hostname: "web-01", os: "Ubuntu 24.04 LTS", kernel: "6.8.0-1012-aws", architecture: "x86_64", ip_address: "172.31.20.15", uptime: "3 days, 4 hours, 0 minutes", python_version: "3.12.3" },
+        cpu: { usage_percent: 40.0, cores: 2, load_average: [0.52, 0.38, 0.30] },
+        memory: { usage_percent: 75.0, used: 5.7 * GB, total: 7.6 * GB, swap_used: 488.3 * MB, swap_total: 1.9 * GB },
+        disks: [{ path: "/", usage_percent: 31.9, used: 9.6 * GB, total: 30.0 * GB }] }
+    }
+  };
+  function gauge(label, value, w, c, status, sub) {
+    var col = status === "OK" ? "var(--ok)" : status === "WARNING" ? "var(--warn)" : "var(--crit)";
+    var cls = status === "OK" ? "ok" : status === "WARNING" ? "warn" : "crit";
+    return '<div class="card gauge"><div class="gauge-top"><span class="eyebrow">' + label + '</span><span class="pill ' + cls + '">' + status + '</span></div>' +
+      '<span class="num">' + value.toFixed(1) + ' %</span>' +
+      '<div class="bar" role="img" aria-label="' + label + " " + value.toFixed(1) + '%"><span style="width:' + Math.min(100, value) + '%;background:' + col + '"></span><i class="tick w" style="left:' + w + '%"></i><i class="tick c" style="left:' + c + '%"></i></div>' +
+      '<span class="sub">' + sub + '</span></div>';
+  }
+  function renderReport(key) {
+    var R = REPORTS[key], r = build(JSON.parse(JSON.stringify(R.data))), t = r.thresholds;
+    $("src-ci").setAttribute("aria-pressed", key === "ci"); $("src-ec2").setAttribute("aria-pressed", key === "ec2");
+    $("report-cmd").textContent = R.cmd; $("report-note").textContent = R.note;
+    $("report-pre").innerHTML = format(r) + "\n\nReport saved to logs/health_report.log";
+    var d = r.disks[0];
+    $("gauges").innerHTML =
+      gauge("CPU", r.cpu.usage_percent, t.cpu.warning, t.cpu.critical, r.cpu.status, r.cpu.cores + " cores · load " + r.cpu.load_average[0].toFixed(2)) +
+      gauge("Memory", r.memory.usage_percent, t.memory.warning, t.memory.critical, r.memory.status, hb(r.memory.used) + " of " + hb(r.memory.total)) +
+      gauge("Disk " + d.path, d.usage_percent, t.disk.warning, t.disk.critical, d.status, hb(d.total - d.used) + " free of " + hb(d.total));
+  }
+  $("src-ci").addEventListener("click", function () { renderReport("ci"); });
+  $("src-ec2").addEventListener("click", function () { renderReport("ec2"); });
+  renderReport("ci");
+
+  /* ---------- simulator ---------- */
+  var simIds = ["s-cpu", "s-mem", "s-disk", "t-cpu-w", "t-cpu-c", "t-mem-w", "t-mem-c", "t-disk-w", "t-disk-c"];
+  function num(id) { var v = parseFloat($(id).value); return isNaN(v) ? 0 : v; }
+  function renderSim() {
+    var cpu = num("s-cpu"), mem = num("s-mem"), disk = num("s-disk");
+    $("o-cpu").textContent = cpu.toFixed(1) + " %"; $("o-mem").textContent = mem.toFixed(1) + " %"; $("o-disk").textContent = disk.toFixed(1) + " %";
+    var t = { cpu: { warning: num("t-cpu-w"), critical: num("t-cpu-c") }, memory: { warning: num("t-mem-w"), critical: num("t-mem-c") }, disk: { warning: num("t-disk-w"), critical: num("t-disk-c") } };
+    var total = 7.6 * GB, dtot = 30 * GB;
+    var r = build({ timestamp: new Date().toISOString().slice(0, 19).replace("T", " "), thresholds: t,
+      system: { hostname: "demo-server", os: "Ubuntu 24.04 LTS", kernel: "6.8.0-1012-aws", architecture: "x86_64", ip_address: "10.0.0.12", uptime: "1 day, 2 hours, 15 minutes", python_version: "3.12.3" },
+      cpu: { usage_percent: cpu, cores: 2, load_average: [cpu / 50, cpu / 60, cpu / 70] },
+      memory: { usage_percent: mem, used: total * mem / 100, total: total, swap_used: 0, swap_total: 1.9 * GB },
+      disks: [{ path: "/", usage_percent: disk, used: dtot * disk / 100, total: dtot }] });
+    $("sim-pre").innerHTML = format(r);
+    var code = SEV[r.overall_status], cls = code === 0 ? "ok" : code === 1 ? "warn" : "crit";
+    $("sim-exit").textContent = code; $("sim-exit").style.color = "var(--" + cls + ")";
+    $("sim-status").innerHTML = '<span class="pill ' + cls + '">Overall ' + r.overall_status + "</span>";
+    var flags = [];
+    if (t.cpu.warning !== 75 || t.cpu.critical !== 90) flags.push("--cpu-warn " + t.cpu.warning + " --cpu-crit " + t.cpu.critical);
+    if (t.memory.warning !== 75 || t.memory.critical !== 90) flags.push("--mem-warn " + t.memory.warning + " --mem-crit " + t.memory.critical);
+    if (t.disk.warning !== 80 || t.disk.critical !== 90) flags.push("--disk-warn " + t.disk.warning + " --disk-crit " + t.disk.critical);
+    $("sim-cmd").textContent = "python3 -m health_monitor" + (flags.length ? " " + flags.join(" ") : "");
+  }
+  simIds.forEach(function (id) { $(id).addEventListener("input", renderSim); });
+  function preset(c, m, d) { $("s-cpu").value = c; $("s-mem").value = m; $("s-disk").value = d; renderSim(); }
+  $("preset-ok").addEventListener("click", function () { preset(18, 42, 35); });
+  $("preset-warn").addEventListener("click", function () { preset(82, 77, 60); });
+  $("preset-crit").addEventListener("click", function () { preset(30, 55, 96); });
+  renderSim();
+
+  /* ---------- code browser ---------- */
+  var order = SRC.files;
+  var current = null;
+  function openFile(path) {
+    var f = SRC.content[path]; current = path;
+    $("file-name").textContent = path;
+    var lines = f.split("\n"); if (lines[lines.length - 1] === "") lines.pop();
+    $("file-meta").textContent = lines.length + " lines";
+    $("file-gh").href = REPO + path;
+    var lang = /\.py$/.test(path) ? "python" : /\.ya?ml$/.test(path) ? "yaml" : /\.sh$/.test(path) ? "bash" : /\.xml$/.test(path) ? "xml" : /Jenkinsfile$/.test(path) ? "groovy" : /Dockerfile$/.test(path) ? "dockerfile" : /\.properties$/.test(path) ? "properties" : null;
+    var html = esc(f);
+    try { if (window.hljs && lang) html = hljs.highlight(f, { language: lang }).value; } catch (e) {}
+    var out = html.split("\n"); if (out[out.length - 1] === "") out.pop();
+    $("file-code").innerHTML = out.map(function (l, i) { return '<span class="ln">' + (i + 1) + "</span>" + l; }).join("\n");
+    document.querySelectorAll("#tree button").forEach(function (b) { b.setAttribute("aria-current", b.getAttribute("data-p") === path ? "true" : "false"); });
+  }
+  (function buildTree() {
+    var tree = $("tree"), lastDir = null;
+    order.forEach(function (p) {
+      var i = p.lastIndexOf("/"), dir = i < 0 ? "/" : p.slice(0, i + 1), name = i < 0 ? p : p.slice(i + 1);
+      if (dir !== lastDir) { var d = document.createElement("div"); d.className = "dir"; d.textContent = dir === "/" ? "project root" : dir; tree.appendChild(d); lastDir = dir; }
+      var b = document.createElement("button"); b.type = "button"; b.setAttribute("data-p", p);
+      var n = SRC.content[p].split("\n").length - 1;
+      b.innerHTML = esc(name) + "<span>" + n + "</span>";
+      b.addEventListener("click", function () { openFile(p); });
+      tree.appendChild(b);
+    });
+    openFile("health_monitor/cpu.py");
+  })();
+
+  /* ---------- tests ---------- */
+  var TESTS = [
+    ["CPU", "cpu.py", ["read_cpu_times", "calculate_usage", "calculate_usage_no_change", "load_average", "get_cpu_usage"]],
+    ["Memory", "memory.py", ["memory_usage", "fallback_without_memavailable"]],
+    ["Disk", "disk.py", ["disk_usage", "missing_path"]],
+    ["System info", "sysinfo.py", ["os_name", "uptime", "format_uptime_unknown", "get_system_info_keys"]],
+    ["Report and log", "report.py", ["evaluate", "overall_status_is_worst", "human_bytes", "format_report", "save_report_appends", "save_report_json"]]
+  ];
+  $("test-groups").innerHTML = TESTS.map(function (g) {
+    return '<div class="card tgroup"><h3>' + g[0] + ' <span class="pill ok">' + g[2].length + ' passed</span></h3><span class="small muted mono">' + g[1] + '</span><ul>' +
+      g[2].map(function (t) { return "<li>test_" + t + "</li>"; }).join("") + "</ul></div>";
+  }).join("") + '<div class="card"><h3>View the test file</h3><p class="small muted">All 19 tests live in one file.</p><a class="btn" href="#code" id="open-tests">Open test_health_monitor.py</a></div>';
+  $("open-tests").addEventListener("click", function () { setTimeout(function () { openFile("tests/test_health_monitor.py"); }, 0); });
+  $("open-jenkinsfile").addEventListener("click", function () { setTimeout(function () { openFile("Jenkinsfile"); }, 0); });
+  $("open-pom").addEventListener("click", function () { setTimeout(function () { openFile("pom.xml"); }, 0); });
+  $("fixture-list").innerHTML = SRC.fixtures.map(function (f) { return '<span class="pill na">' + esc(f) + "</span>"; }).join("");
+
+  /* ---------- copy buttons ---------- */
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest(".copy"); if (!btn) return;
+    var code = btn.previousElementSibling, text = code.textContent;
+    function reset() { setTimeout(function () { btn.textContent = "Copy"; }, 1500); }
+    function fallback() { var r = document.createRange(); r.selectNodeContents(code); var s = getSelection(); s.removeAllRanges(); s.addRange(r); btn.textContent = "Selected"; reset(); }
+    try { navigator.clipboard.writeText(text).then(function () { btn.textContent = "Copied"; reset(); }, fallback); } catch (err) { fallback(); }
+  });
+
+  show();
+})();
+</script>
+
+</body>
+</html>

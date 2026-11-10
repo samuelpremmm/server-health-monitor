@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Maven build for the Linux Server Health Monitor (a Python project).
+
+  Maven does not compile anything here. It drives the release lifecycle:
+    mvn test     -> runs the Python test suite with coverage (pytest)
+    mvn package  -> builds target/server-health-monitor-<version>-dist.zip
+    mvn deploy   -> uploads the pom and zip to Nexus (maven-releases / maven-snapshots)
+
+  The version comes from health_monitor/__init__.py. Jenkins sets it with
+  `mvn versions:set` before building, so the code and the artifact always match.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.samuelpremmm</groupId>
+  <artifactId>server-health-monitor</artifactId>
+  <version>1.0.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+
+  <name>Linux Server Health Monitor</name>
+  <description>Dependency-free Python tool that checks Linux CPU, memory, disk and system health and logs a report.</description>
+  <url>https://github.com/samuelpremmm/server-health-monitor</url>
+
+  <scm>
+    <url>https://github.com/samuelpremmm/server-health-monitor</url>
+    <connection>scm:git:https://github.com/samuelpremmm/server-health-monitor.git</connection>
+  </scm>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- Python used to run the tests. Jenkins passes the virtualenv's python. -->
+    <python.executable>python3</python.executable>
+    <skipTests>false</skipTests>
+    <!-- Nexus base URL. "nexus" is the container name in ci/docker-compose.yml. -->
+    <nexus.url>http://nexus:8081</nexus.url>
+  </properties>
+
+  <distributionManagement>
+    <repository>
+      <id>nexus-releases</id>
+      <name>Nexus releases</name>
+      <url>${nexus.url}/repository/maven-releases/</url>
+    </repository>
+    <snapshotRepository>
+      <id>nexus-snapshots</id>
+      <name>Nexus snapshots</name>
+      <url>${nexus.url}/repository/maven-snapshots/</url>
+    </snapshotRepository>
+  </distributionManagement>
+
+  <build>
+    <plugins>
+      <!-- test phase: run pytest with JUnit XML and coverage reports for Jenkins and SonarQube -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.1.0</version>
+        <executions>
+          <execution>
+            <id>python-tests</id>
+            <phase>test</phase>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <configuration>
+              <skip>${skipTests}</skip>
+              <executable>${python.executable}</executable>
+              <workingDirectory>${project.basedir}</workingDirectory>
+              <arguments>
+                <argument>-m</argument>
+                <argument>pytest</argument>
+                <argument>--junitxml=${project.build.directory}/test-reports/junit.xml</argument>
+                <argument>--cov=health_monitor</argument>
+                <argument>--cov-report=xml:${project.build.directory}/coverage.xml</argument>
+                <argument>--cov-report=term</argument>
+              </arguments>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- package phase: zip the tool so it can be downloaded from Nexus and run on any Linux server -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-assembly-plugin</artifactId>
+        <version>3.7.1</version>
+        <configuration>
+          <descriptors>
+            <descriptor>src/assembly/distribution.xml</descriptor>
+          </descriptors>
+        </configuration>
+        <executions>
+          <execution>
+            <id>make-distribution</id>
+            <phase>package</phase>
+            <goals>
+              <goal>single</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- deploy phase: upload to Nexus -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-deploy-plugin</artifactId>
+        <version>3.1.2</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>
