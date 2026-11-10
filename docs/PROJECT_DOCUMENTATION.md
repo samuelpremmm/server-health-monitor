@@ -143,7 +143,7 @@ The overall status is the most severe of all checks. Every non-OK check is liste
    ```
 4. **Clone and run:**
    ```bash
-   git clone https://github.com/<your-username>/server-health-monitor.git
+   git clone https://github.com/samuelpremmm/server-health-monitor.git
    cd server-health-monitor
    python3 -m health_monitor
    ```
@@ -198,7 +198,7 @@ git add .
 git commit -m "Linux server health monitor: CPU, memory, disk, system info, logging"
 
 # create an empty repository named server-health-monitor on github.com, then:
-git remote add origin https://github.com/<your-username>/server-health-monitor.git
+git remote add origin https://github.com/samuelpremmm/server-health-monitor.git
 git push -u origin main
 ```
 

@@ -20,7 +20,7 @@ It uses **only the Python standard library** and reads Linux's `/proc` files dir
 ## Quick start
 
 ```bash
-git clone https://github.com/<your-username>/server-health-monitor.git
+git clone https://github.com/samuelpremmm/server-health-monitor.git
 cd server-health-monitor
 python3 -m health_monitor
 ```
