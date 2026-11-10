@@ -1,0 +1,2 @@
+# Keep Linux line endings so scripts run correctly on the server.
+* text=auto eol=lf
