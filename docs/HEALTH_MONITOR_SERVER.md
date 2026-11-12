@@ -201,6 +201,26 @@ Cron only runs while the instance is running; it resumes automatically after I s
 
 ---
 
+## Step 5 — Web dashboard on port 5000 *(in progress)*
+
+The code is written and tested (`health_monitor/web.py`, 5 tests in `tests/test_web.py`). It still needs to be run on the server.
+
+| Command | Simple explanation |
+|---------|--------------------|
+| `git pull` | Download the newest code from GitHub onto the server |
+| `python3 -m health_monitor.web` | Start the dashboard on port 5000 (`Ctrl+C` to stop) |
+| `http://<SERVER_PUBLIC_IP>:5000` | Open the dashboard in my laptop's browser (http, not https) |
+| `http://<SERVER_PUBLIC_IP>:5000/api/health` | The same data as JSON |
+| `http://<SERVER_PUBLIC_IP>:5000/healthz` | "Is the app alive?" check, used later by Docker |
+
+**Port 5000 is open only to my IP (/32)**, the same as SSH.
+
+If the page doesn't load: check that the instance is *Running*, and that my laptop IP (https://checkip.amazonaws.com) still matches the security group rule.
+
+_Result / screenshot: (to be added)_
+
+---
+
 ## After every session — save credits and stay safe
 
 | Action | Where | Effect |
@@ -252,7 +272,7 @@ Saved in `docs/screenshots/`. Blur IP addresses, account name and account ID bef
 
 ## Next steps (to be written as we complete them)
 
-- **Step 5 — Web dashboard:** view server health in a browser at `http://<SERVER_PUBLIC_IP>:5000`
+- **Step 5 — Web dashboard:** view server health in a browser at `http://<SERVER_PUBLIC_IP>:5000` *(code ready, see below)*
 - **Step 6 — Docker:** package the app into a container
 - **Step 7 — CI/CD:** auto test and deploy on every `git push`
 - **Step 8 — Terraform:** create the EC2 server and security group from code

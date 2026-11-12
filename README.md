@@ -11,6 +11,8 @@ It combines these into a **health report** with an `OK` / `WARNING` / `CRITICAL`
 
 It uses **only the Python standard library** and reads Linux's `/proc` files directly, so there is nothing to `pip install`.
 
+It also has a **web dashboard** (port 5000) with a JSON API, and it is **deployed on AWS EC2**, where cron runs it every 5 minutes. See [Deployed on AWS](#deployed-on-aws).
+
 ## Requirements
 
 - Linux (Ubuntu, Amazon Linux, CentOS, Debian, etc.)
@@ -105,6 +107,38 @@ crontab -l                          # confirm the job
 tail -f logs/health_report.log      # watch reports arrive
 ```
 
+## Web dashboard
+
+```bash
+python3 -m health_monitor.web              # live data on http://<server>:5000
+python3 -m health_monitor.web --port 8080  # another port (or set $PORT)
+python3 -m health_monitor.web --demo       # sample data, works on Windows/macOS
+```
+
+| URL | What it returns |
+|-----|-----------------|
+| `/` | Dashboard page with CPU, memory, disk, system info and alerts; refreshes every 5 seconds |
+| `/api/health` | The full report as JSON |
+| `/healthz` | `{"status": "ok"}`, a liveness check for Docker and load balancers |
+
+It is built on Python's `http.server`, so there is still nothing to install. Metrics are cached for 2 seconds, so many viewers don't trigger repeated CPU sampling.
+
+> On a cloud server, open port 5000 **only to your own IP** (`x.x.x.x/32`) in the firewall / security group, never to `0.0.0.0/0`.
+
+## Deployed on AWS
+
+The tool runs on an **AWS EC2** Ubuntu 24.04 server (t3.micro, Mumbai `ap-south-1`):
+
+- Security group allows SSH (22) and the dashboard (5000) **only from my IP (/32)**
+- Key-based SSH, MFA on the account, an IAM user for daily work, and a zero-spend budget alert
+- cron runs a health check every 5 minutes
+
+Step-by-step guide with screenshots: [docs/HEALTH_MONITOR_SERVER.md](docs/HEALTH_MONITOR_SERVER.md)
+
+| Health report on EC2 | Cron every 5 minutes |
+|---|---|
+| ![Health report](docs/screenshots/04-health-report.png) | ![Cron log](docs/screenshots/06-cron-log.png) |
+
 ## Run the tests
 
 ```bash
@@ -130,13 +164,19 @@ server-health-monitor/
 │   ├── memory.py         RAM and swap from /proc/meminfo
 │   ├── disk.py           disk usage via shutil.disk_usage
 │   ├── sysinfo.py        hostname, OS, kernel, IP, uptime
-│   └── report.py         thresholds, report text, log file
+│   ├── report.py         thresholds, report text, log file
+│   └── web.py            web dashboard + JSON API (port 5000)
 ├── tests/
 │   ├── fixtures/         sample /proc files
-│   └── test_health_monitor.py
+│   ├── test_health_monitor.py
+│   └── test_web.py
 ├── scripts/install_cron.sh
 ├── logs/                 reports are written here
-├── docs/PROJECT_DOCUMENTATION.md
+├── docs/
+│   ├── HEALTH_MONITOR_SERVER.md   AWS EC2 deployment guide
+│   ├── PROJECT_DOCUMENTATION.md   design notes
+│   ├── CICD_SETUP.md              Jenkins / SonarQube / Nexus pipeline
+│   └── screenshots/
 ├── monitor.py            launcher
 └── README.md
 ```
