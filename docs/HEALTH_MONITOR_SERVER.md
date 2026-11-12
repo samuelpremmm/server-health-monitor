@@ -16,11 +16,12 @@ A step-by-step record of deploying my **Linux Server Health Monitor** (a Python 
 | 2 | Connect to the server with MobaXterm and the `.pem` key | ✅ Done |
 | 3 | Install tools, clone project, run the health monitor | ✅ Done |
 | 4 | Automate with cron (every 5 minutes) | ✅ Done |
-| 5 | Web dashboard on port 5000 | ⏳ Next |
-| 6 | Docker | ⬜ Planned |
-| 7 | CI/CD pipeline (GitHub Actions / Jenkins) | ⬜ Planned |
-| 8 | Terraform (create AWS servers with code) | ⬜ Planned |
-| 9 | Monitoring with Prometheus + Grafana | ⬜ Planned |
+| 5 | Web dashboard on port 5000 | ✅ Done |
+| 6 | Run the dashboard 24/7 with systemd | ✅ Done |
+| 7 | Docker | ✅ Done |
+| 8 | CI/CD: auto deploy to EC2 on `git push` | ⏳ Next |
+| 9 | Terraform (create AWS servers with code) | ⬜ Planned |
+| 10 | Monitoring with Prometheus + Grafana | ⬜ Planned |
 
 ---
 
@@ -201,9 +202,9 @@ Cron only runs while the instance is running; it resumes automatically after I s
 
 ---
 
-## Step 5 — Web dashboard on port 5000 *(in progress)*
+## Step 5 — Web dashboard on port 5000
 
-The code is written and tested (`health_monitor/web.py`, 5 tests in `tests/test_web.py`). It still needs to be run on the server.
+A small web page (`health_monitor/web.py`, 5 tests in `tests/test_web.py`) built on Python's `http.server`, so nothing extra to install.
 
 | Command | Simple explanation |
 |---------|--------------------|
@@ -217,7 +218,120 @@ The code is written and tested (`health_monitor/web.py`, 5 tests in `tests/test_
 
 If the page doesn't load: check that the instance is *Running*, and that my laptop IP (https://checkip.amazonaws.com) still matches the security group rule.
 
-_Result / screenshot: (to be added)_
+**Mistake I made:** I typed the placeholder `http://<YOUR-SERVER-PUBLIC-IP>:5000` into Chrome, and it did a Google search. The real address uses the server's actual public IP from EC2 → Details.
+
+**Result:** live CPU, memory, disk and system info from the EC2 server, refreshing every 5 seconds. ✅
+
+![Dashboard running on EC2](screenshots/07-dashboard.png)
+
+---
+
+## Step 6 — Run the dashboard 24/7 with systemd
+
+**systemd** = Linux's service manager. It starts programs at boot and restarts them if they crash. Without it, the dashboard stops when I close MobaXterm.
+
+1. Stop the running dashboard: `Ctrl+C`
+2. Create the service file:
+
+```bash
+sudo tee /etc/systemd/system/health-dashboard.service > /dev/null <<'EOF'
+[Unit]
+Description=Server Health Monitor web dashboard
+After=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/server-health-monitor
+ExecStart=/usr/bin/python3 -m health_monitor.web --port 5000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+| Command / line | Simple explanation |
+|----------------|--------------------|
+| `User=ubuntu` | Run as a normal user, not root |
+| `Restart=always` + `RestartSec=5` | If it crashes, start it again after 5 seconds |
+| `WantedBy=multi-user.target` | Start it when the server boots |
+| `sudo systemctl daemon-reload` | Tell systemd to read the new service file |
+| `sudo systemctl enable --now health-dashboard` | Turn it on at boot **and** start it now |
+| `systemctl status health-dashboard --no-pager` | Check it: look for `active (running)` |
+| `journalctl -u health-dashboard -f` | Watch its logs live (`Ctrl+C` to stop) |
+
+**Result:** `active (running)` and `enabled`. The dashboard keeps working after closing MobaXterm. ✅
+
+![systemd service running](screenshots/08-systemd-service.png)
+
+---
+
+## Step 7 — Package it with Docker
+
+**Docker** = puts the app and everything it needs into a **container**, so it runs the same way on any server.
+**Image** = the recipe (built once). **Container** = a running copy of the image.
+
+The `Dockerfile` in the project:
+- starts from `python:3.12-slim` (small official Python image)
+- copies only the app code (`.dockerignore` keeps docs, logs and CI files out)
+- runs as a normal user (`app`), not root
+- has a `HEALTHCHECK` that calls `/healthz` every 30 seconds
+
+### Install Docker on the server
+
+| Command | Simple explanation |
+|---------|--------------------|
+| `sudo apt update && sudo apt install -y docker.io docker-buildx` | Install Docker and its modern builder (BuildKit) |
+| `sudo usermod -aG docker ubuntu` | Let my user run `docker` without `sudo` |
+| `newgrp docker` (or log out and back in) | Apply the new group to this session |
+| `groups` | Check: `docker` should be in the list |
+| `docker --version` | Check Docker is installed |
+
+### Build and run
+
+```bash
+cd ~/server-health-monitor && git pull
+docker build -t health-monitor .
+sudo systemctl disable --now health-dashboard     # free port 5000 for Docker
+docker run -d --name health-monitor -p 5000:5000 --hostname "$(hostname)" \
+  -v /:/host:ro -e DISK_PATHS=/host --restart unless-stopped health-monitor
+docker ps
+```
+
+| Part of `docker run` | Simple explanation |
+|----------------------|--------------------|
+| `-d` | Run in the background |
+| `--name health-monitor` | Name the container |
+| `-p 5000:5000` | Server port 5000 → container port 5000 |
+| `--hostname "$(hostname)"` | Show the server's real name instead of a random container ID |
+| `-v /:/host:ro` | Let the container **read** the server's disk (`ro` = read-only) |
+| `-e DISK_PATHS=/host` | Tell the app to check that disk |
+| `--restart unless-stopped` | Start again after a crash or server reboot |
+
+Inside a container, `/proc/stat` and `/proc/meminfo` already show the **host's** CPU and memory, so only the disk needs the extra mount.
+
+### Problems I hit
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `permission denied ... /var/run/docker.sock` | My user wasn't in the `docker` group yet (`groups` didn't list it) | `sudo usermod -aG docker ubuntu`, then `newgrp docker` |
+| `DEPRECATED: The legacy builder is deprecated` | BuildKit wasn't installed | `sudo apt install -y docker-buildx` |
+| `Conflict. The container name "/health-monitor" is already in use` | I ran `docker run` twice; the first one was already running | Nothing to fix. To recreate: `docker rm -f health-monitor`, then `docker run ...` again |
+
+### Useful Docker commands
+
+| Command | Simple explanation |
+|---------|--------------------|
+| `docker ps` | Running containers; STATUS should say `(healthy)` |
+| `docker logs -f health-monitor` | Watch the app's logs (`Ctrl+C` to stop) |
+| `docker restart health-monitor` | Restart the container |
+| `docker rm -f health-monitor` | Stop and delete the container (the image stays) |
+| `docker images` | List built images |
+
+**Result:** `Up 3 minutes (healthy)`, port `0.0.0.0:5000->5000/tcp`. ✅
+
+![Docker container healthy](screenshots/09-docker-ps.png)
 
 ---
 
@@ -245,6 +359,9 @@ Saved in `docs/screenshots/`. Blur IP addresses, account name and account ID bef
 | 2 | `04-health-report.png` | Health report output in MobaXterm (public IP cropped out) | ✅ Done |
 | 3 | `02-security-group.png` | Inbound rules: SSH 22 + TCP 5000 from my IP/32 (IP blacked out) | ✅ Done |
 | 4 | `06-cron-log.png` | `crontab -l` + report times 5 minutes apart | ✅ Done |
+| 5 | `07-dashboard.png` | Web dashboard in the browser (address bar cropped out) | ✅ Done |
+| 6 | `08-systemd-service.png` | `systemctl status`: active (running), enabled | ✅ Done |
+| 7 | `09-docker-ps.png` | `docker run` + `docker ps` showing `(healthy)` | ✅ Done |
 
 **How to take screenshots on Windows**
 - **Win + PrtSc** → whole screen, saved automatically to `C:\Users\Samue\OneDrive\Pictures\Screenshots` (easiest)
@@ -267,13 +384,14 @@ Saved in `docs/screenshots/`. Blur IP addresses, account name and account ID bef
 - "I follow AWS best practices: MFA, no daily root usage, IAM user, budget alerts, and stopping resources after use."
 - "The tool reads metrics from /proc and returns exit codes 0/1/2, so it can plug into cron or monitoring systems."
 - "I scheduled it with cron every 5 minutes using full paths, and redirected errors to a separate log (`2>&1`) so failures are easy to debug."
+- "I added a web dashboard and JSON API with a `/healthz` endpoint, and ran it as a systemd service so it survives reboots and crashes."
+- "I containerized it with Docker: a slim Python image, non-root user, a HEALTHCHECK, `--restart unless-stopped`, and a read-only host mount so the container reports the server's real disk."
+- "I debugged the Docker socket `permission denied` error by checking `groups` and adding my user to the docker group."
 
 ---
 
 ## Next steps (to be written as we complete them)
 
-- **Step 5 — Web dashboard:** view server health in a browser at `http://<SERVER_PUBLIC_IP>:5000` *(code ready, see below)*
-- **Step 6 — Docker:** package the app into a container
-- **Step 7 — CI/CD:** auto test and deploy on every `git push`
-- **Step 8 — Terraform:** create the EC2 server and security group from code
-- **Step 9 — Prometheus + Grafana:** graphs and alerts
+- **Step 8 — CI/CD:** auto test and deploy to EC2 on every `git push`
+- **Step 9 — Terraform:** create the EC2 server and security group from code
+- **Step 10 — Prometheus + Grafana:** graphs and alerts

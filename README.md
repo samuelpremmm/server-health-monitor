@@ -125,6 +125,17 @@ It is built on Python's `http.server`, so there is still nothing to install. Met
 
 > On a cloud server, open port 5000 **only to your own IP** (`x.x.x.x/32`) in the firewall / security group, never to `0.0.0.0/0`.
 
+## Run with Docker
+
+```bash
+docker build -t health-monitor .
+docker run -d --name health-monitor -p 5000:5000 --hostname "$(hostname)" \
+  -v /:/host:ro -e DISK_PATHS=/host --restart unless-stopped health-monitor
+docker ps          # STATUS shows (healthy) once /healthz answers
+```
+
+The image is `python:3.12-slim`, runs as a non-root user and has a `HEALTHCHECK` on `/healthz`. The read-only `/host` mount lets the container report the server's real disk; CPU and memory already come from the host's `/proc`.
+
 ## Deployed on AWS
 
 The tool runs on an **AWS EC2** Ubuntu 24.04 server (t3.micro, Mumbai `ap-south-1`):
@@ -132,6 +143,9 @@ The tool runs on an **AWS EC2** Ubuntu 24.04 server (t3.micro, Mumbai `ap-south-
 - Security group allows SSH (22) and the dashboard (5000) **only from my IP (/32)**
 - Key-based SSH, MFA on the account, an IAM user for daily work, and a zero-spend budget alert
 - cron runs a health check every 5 minutes
+- The dashboard runs 24/7, first as a systemd service, now as a Docker container with `--restart unless-stopped`
+
+![Dashboard on EC2](docs/screenshots/07-dashboard.png)
 
 Step-by-step guide with screenshots: [docs/HEALTH_MONITOR_SERVER.md](docs/HEALTH_MONITOR_SERVER.md)
 
