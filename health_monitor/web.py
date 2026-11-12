@@ -24,13 +24,13 @@ FIXTURES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__
                         "tests", "fixtures")
 
 
-def live_report(interval=0.5):
+def live_report(interval=0.5, disks=("/",)):
     """Collect real metrics from /proc (Linux only)."""
     return report.build_report(
         system=sysinfo.get_system_info(),
         cpu=cpu.get_cpu_usage(interval=interval),
         memory=memory.get_memory_usage(),
-        disks=disk.get_disk_usage(["/"]),
+        disks=disk.get_disk_usage(list(disks)),
     )
 
 
@@ -118,6 +118,8 @@ def main(argv=None):
                    help="address to listen on (default: 0.0.0.0 = all interfaces)")
     p.add_argument("--port", type=int, default=int(os.environ.get("PORT", 5000)),
                    help="port to listen on (default: 5000 or $PORT)")
+    p.add_argument("--disk", action="append", metavar="PATH",
+                   help="mount point to check (repeatable, default: / or $DISK_PATHS)")
     p.add_argument("--demo", action="store_true",
                    help="use sample data from tests/fixtures (works on any OS)")
     args = p.parse_args(argv)
@@ -126,7 +128,8 @@ def main(argv=None):
         print("Live mode reads /proc and must run on Linux. Use --demo here.", file=sys.stderr)
         return 3
 
-    collector = CachedCollector(demo_report if args.demo else live_report)
+    disks = args.disk or os.environ.get("DISK_PATHS", "/").split(",")
+    collector = CachedCollector(demo_report if args.demo else lambda: live_report(disks=disks))
     server = make_server(args.host, args.port, collector)
     mode = "demo data" if args.demo else "live data"
     print(f"Health dashboard ({mode}) on http://{args.host}:{args.port}  (Ctrl+C to stop)")
