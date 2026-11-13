@@ -48,3 +48,39 @@ jobs:
       with:
         name: health-report
         path: logs/health_report.log
+
+  # CD: runs on my EC2 server (self-hosted runner), only after tests pass
+  # and only for pushes to main (never for pull requests).
+  deploy:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Linux, X64]
+    concurrency: deploy-ec2   # one deploy at a time
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Build Docker image
+      run: |
+        docker build -t health-monitor:${GITHUB_SHA::7} -t health-monitor:latest .
+
+    - name: Replace the running container
+      run: |
+        docker rm -f health-monitor || true
+        docker run -d --name health-monitor -p 5000:5000 --hostname "$(hostname)" \
+          -v /:/host:ro -e DISK_PATHS=/host --restart unless-stopped \
+          health-monitor:latest
+
+    - name: Health check (/healthz)
+      run: |
+        for i in $(seq 1 15); do
+          if curl -fsS http://127.0.0.1:5000/healthz; then
+            echo; echo "Deploy OK: version ${GITHUB_SHA::7}"; exit 0
+          fi
+          sleep 2
+        done
+        echo "App did not become healthy"; docker logs --tail 50 health-monitor; exit 1
+
+    - name: Clean up old images
+      if: always()
+      run: docker image prune -f
