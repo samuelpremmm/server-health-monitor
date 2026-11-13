@@ -200,5 +200,5 @@ Full design notes, the step-by-step build, Git/GitHub workflow and testing detai
 ## Author
 
 Chigurupati Prem Kumar, B.Tech CSE, Andhra University · AWS & DevOps Certified (Grade A)
-Tested CI/CD on 13 Nov 2026 ✅
+
 
