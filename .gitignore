@@ -11,3 +11,11 @@ target/
 .coverage
 coverage.xml
 .scannerwork/
+
+# Terraform: state can hold sensitive data, never commit it
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+crash.log
+tfplan
