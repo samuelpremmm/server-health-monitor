@@ -13,6 +13,19 @@ It uses **only the Python standard library** and reads Linux's `/proc` files dir
 
 It also has a **web dashboard** (port 5000) with a JSON API, and it is **deployed on AWS EC2**, where cron runs it every 5 minutes. See [Deployed on AWS](#deployed-on-aws).
 
+## DevOps journey
+
+I'm growing this project into an end-to-end DevOps pipeline, one part at a time:
+
+| Part | What I built | Notes |
+|---|---|---|
+| 1 | AWS EC2 server, security group locked to my IP, cron every 5 min | [Deployment guide](docs/HEALTH_MONITOR_SERVER.md) |
+| 2 | Web dashboard, systemd service, Docker container with health check | [Part 2 notes](docs/PART2_NOTES.md) |
+| 3 | CI/CD with GitHub Actions: tests on every push, auto-deploy to EC2 | [Part 3 notes](docs/PART3_NOTES.md) |
+| 4 | Terraform: the server, firewall and key built from code | [Part 4 notes](docs/PART4_NOTES.md) |
+| 5 | Ansible: automatic server configuration | Coming next |
+| 6 | Prometheus + Grafana + CloudWatch alerts | Planned |
+
 ## Requirements
 
 - Linux (Ubuntu, Amazon Linux, CentOS, Debian, etc.)
@@ -153,6 +166,49 @@ Step-by-step guide with screenshots: [docs/HEALTH_MONITOR_SERVER.md](docs/HEALTH
 |---|---|
 | ![Health report](docs/screenshots/04-health-report.png) | ![Cron log](docs/screenshots/06-cron-log.png) |
 
+## CI/CD with GitHub Actions
+
+Every push to `main` runs [.github/workflows/python-app.yml](.github/workflows/python-app.yml):
+
+```
+git push → build (flake8 + pytest, on GitHub) → deploy (self-hosted runner on EC2) → /healthz check
+```
+
+- **build** lints the code and runs the tests. If they fail, nothing is deployed.
+- **deploy** runs on a self-hosted runner on the EC2 server. It rebuilds the Docker image, replaces the container and checks `/healthz`.
+- The runner connects **outbound** to GitHub, so no SSH port is opened to the internet.
+- Pull requests from outside contributors need approval before any workflow runs, and deploy only runs on pushes to `main`.
+- The dashboard footer shows the deployed commit (`APP_VERSION`).
+
+| Pipeline run | Deployed version |
+|---|---|
+| ![Pipeline](docs/screenshots/10-pipeline-run.png) | ![Auto-deployed](docs/screenshots/13-auto-deployed.png) |
+
+## Infrastructure as Code with Terraform
+
+The [terraform/](terraform/) folder builds the whole server from code:
+
+| File | Creates |
+|---|---|
+| `main.tf` | EC2 t3.micro, Ubuntu 24.04, 8 GB encrypted disk, IMDSv2 required |
+| `security.tf` | Security group: SSH (22) and dashboard (5000) only from the caller's IP, detected automatically |
+| `user_data.sh` | First-boot script: installs Docker, clones this repo, starts the dashboard |
+| `outputs.tf` | Public IP, dashboard URL, SSH command |
+
+```bash
+cd terraform
+terraform init
+terraform plan      # preview: 3 to add
+terraform apply     # server + firewall + key, dashboard live in about a minute
+terraform destroy   # remove everything
+```
+
+I tested it by destroying and rebuilding: from zero to a healthy dashboard in **93 seconds**. State and plan files are git-ignored.
+
+| Destroy and rebuild in the EC2 console | `terraform plan` after apply |
+|---|---|
+| ![EC2 tags](docs/screenshots/16-ec2-terraform-tags.png) | ![Plan](docs/screenshots/15-terraform-plan.png) |
+
 ## Run the tests
 
 ```bash
@@ -186,8 +242,12 @@ server-health-monitor/
 │   └── test_web.py
 ├── scripts/install_cron.sh
 ├── logs/                 reports are written here
+├── .github/workflows/python-app.yml   CI/CD: test, then deploy to EC2
+├── terraform/            EC2, security group, key pair as code
+├── Dockerfile            container for the dashboard
 ├── docs/
 │   ├── HEALTH_MONITOR_SERVER.md   AWS EC2 deployment guide
+│   ├── PART2_NOTES.md … PART4_NOTES.md   notes for each part
 │   ├── PROJECT_DOCUMENTATION.md   design notes
 │   ├── CICD_SETUP.md              Jenkins / SonarQube / Nexus pipeline
 │   └── screenshots/
