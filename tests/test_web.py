@@ -31,6 +31,8 @@ class TestWebDashboard(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("text/html", ctype)
         self.assertIn(b"Server Health Monitor", body)
+        self.assertIn(b"version dev", body)  # APP_VERSION not set in tests
+        self.assertNotIn(b"__APP_VERSION__", body)
 
     def test_api_health(self):
         status, ctype, body = self.get("/api/health")

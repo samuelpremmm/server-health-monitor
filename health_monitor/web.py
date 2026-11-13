@@ -11,6 +11,7 @@ Routes:
 """
 
 import argparse
+import html
 import json
 import os
 import sys
@@ -77,7 +78,9 @@ def make_handler(collector):
         def do_GET(self):
             path = self.path.split("?", 1)[0]
             if path == "/":
-                self._send(200, "text/html; charset=utf-8", DASHBOARD_HTML.encode())
+                version = html.escape(os.environ.get("APP_VERSION", "dev"))
+                page = DASHBOARD_HTML.replace("__APP_VERSION__", version)
+                self._send(200, "text/html; charset=utf-8", page.encode())
             elif path == "/api/health":
                 try:
                     body = json.dumps(collector()).encode()
@@ -213,6 +216,9 @@ DASHBOARD_HTML = """<!doctype html>
       <div id="alerts" class="detail"></div>
     </section>
   </div>
+  <footer class="sub" style="margin-top:20px;text-align:center">
+    🚀 Deployed automatically by GitHub Actions · version __APP_VERSION__
+  </footer>
 </main>
 <script>
 const REFRESH_MS = 5000;

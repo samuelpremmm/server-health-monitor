@@ -68,7 +68,8 @@ jobs:
       run: |
         docker rm -f health-monitor || true
         docker run -d --name health-monitor -p 5000:5000 --hostname "$(hostname)" \
-          -v /:/host:ro -e DISK_PATHS=/host --restart unless-stopped \
+          -v /:/host:ro -e DISK_PATHS=/host -e APP_VERSION=${GITHUB_SHA::7} \
+          --restart unless-stopped \
           health-monitor:latest
 
     - name: Health check (/healthz)
