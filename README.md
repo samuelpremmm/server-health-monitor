@@ -11,7 +11,7 @@ It combines these into a **health report** with an `OK` / `WARNING` / `CRITICAL`
 
 It uses **only the Python standard library** and reads Linux's `/proc` files directly, so there is nothing to `pip install`.
 
-It also has a **web dashboard** (port 5000) with a JSON API, and it is **deployed on AWS EC2**, where cron runs it every 5 minutes. See [Deployed on AWS](#deployed-on-aws).
+It also has a **web dashboard** (port 5000) with a JSON API and a Prometheus **/metrics** endpoint, and it is **deployed on AWS EC2**, where cron runs it every 5 minutes. See [Deployed on AWS](#deployed-on-aws).
 
 ## DevOps journey
 
@@ -24,7 +24,7 @@ I'm growing this project into an end-to-end DevOps pipeline, one part at a time:
 | 3 | CI/CD with GitHub Actions: tests on every push, auto-deploy to EC2 | [Part 3 notes](docs/PART3_NOTES.md) |
 | 4 | Terraform: the server, firewall and key built from code | [Part 4 notes](docs/PART4_NOTES.md) |
 | 5 | Ansible: server setup from a playbook, idempotent and self-healing | [Part 5 notes](docs/PART5_NOTES.md) |
-| 6 | Prometheus + Grafana + CloudWatch alerts | Coming next |
+| 6 | Monitoring: /metrics, Prometheus, Grafana, CloudWatch alarms with email | [Part 6 notes](docs/PART6_NOTES.md) |
 
 ## Requirements
 
@@ -133,6 +133,7 @@ python3 -m health_monitor.web --demo       # sample data, works on Windows/macOS
 | `/` | Dashboard page with CPU, memory, disk, system info and alerts; refreshes every 5 seconds |
 | `/api/health` | The full report as JSON |
 | `/healthz` | `{"status": "ok"}`, a liveness check for Docker and load balancers |
+| `/metrics` | CPU, memory, disk, load and status in Prometheus text format |
 
 It is built on Python's `http.server`, so there is still nothing to install. Metrics are cached for 2 seconds, so many viewers don't trigger repeated CPU sampling.
 
@@ -237,6 +238,23 @@ ansible-playbook site.yml
 |---|---|
 | ![Idempotent](docs/screenshots/21-ansible-idempotent.png) | ![Dashboard](docs/screenshots/23-dashboard-ansible.png) |
 
+## Monitoring with Prometheus, Grafana and CloudWatch
+
+```
+App /metrics ───┐
+node_exporter ──┼──▶ Prometheus (every 15s, alert rules) ──▶ Grafana dashboard
+                │
+AWS CloudWatch ─┴──▶ alarm: CPU > 80% or status check failed ──▶ SNS ──▶ email
+```
+
+- **Ansible** (`roles/monitoring`) runs node_exporter, Prometheus and Grafana as containers. Grafana's data source and dashboard are provisioned from files.
+- **Terraform** (`alerts.tf`) creates the CloudWatch alarms and the SNS email topic, and opens Grafana (3000) and Prometheus (9090) to my IP only. The email address lives in a git-ignored `terraform.tfvars`.
+- **Stress test:** CPU to 100% → Grafana turned red, the Prometheus `HighCPU` alert fired after 2 minutes, CloudWatch sent an ALARM email, then an OK email when it recovered.
+
+| CPU stress test in Grafana | CloudWatch alarm email |
+|---|---|
+| ![Grafana](docs/screenshots/28-grafana-cpu-spike.png) | ![Email](docs/screenshots/30-cloudwatch-alarm-email.png) |
+
 ## Run the tests
 
 ```bash
@@ -263,7 +281,7 @@ server-health-monitor/
 │   ├── disk.py           disk usage via shutil.disk_usage
 │   ├── sysinfo.py        hostname, OS, kernel, IP, uptime
 │   ├── report.py         thresholds, report text, log file
-│   └── web.py            web dashboard + JSON API (port 5000)
+│   └── web.py            web dashboard, JSON API, /metrics (port 5000)
 ├── tests/
 │   ├── fixtures/         sample /proc files
 │   ├── test_health_monitor.py
@@ -272,11 +290,11 @@ server-health-monitor/
 ├── logs/                 reports are written here
 ├── .github/workflows/python-app.yml   CI/CD: test, then deploy to EC2
 ├── terraform/            EC2, security group, key pair as code
-├── ansible/              playbook + roles that configure the server
+├── ansible/              playbook + roles: server setup and monitoring stack
 ├── Dockerfile            container for the dashboard
 ├── docs/
 │   ├── HEALTH_MONITOR_SERVER.md   AWS EC2 deployment guide
-│   ├── PART2_NOTES.md … PART5_NOTES.md   notes for each part
+│   ├── PART2_NOTES.md … PART6_NOTES.md   notes for each part
 │   ├── PROJECT_DOCUMENTATION.md   design notes
 │   ├── CICD_SETUP.md              Jenkins / SonarQube / Nexus pipeline
 │   └── screenshots/

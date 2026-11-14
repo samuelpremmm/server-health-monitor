@@ -1,7 +1,7 @@
 # HEALTH MONITOR SERVER
 
 > **Status: DRAFT** — this document grows as we finish each step of the project.
-> Last updated: 14 Nov 2026
+> Last updated: 15 Nov 2026
 
 A step-by-step record of deploying my **Linux Server Health Monitor** (a Python tool that checks CPU, RAM, disk and system info) on a real **AWS EC2** server, written in simple words so I can re-read it any time and explain it in interviews.
 
@@ -22,7 +22,7 @@ A step-by-step record of deploying my **Linux Server Health Monitor** (a Python 
 | 8 | CI/CD: auto deploy to EC2 on `git push` | ✅ Done |
 | 9 | Terraform (create AWS servers with code) | ✅ Done |
 | 10 | Ansible (set up the server with code) | ✅ Done |
-| 11 | Monitoring with Prometheus + Grafana + CloudWatch | ⏳ Next |
+| 11 | Monitoring with Prometheus + Grafana + CloudWatch | ✅ Done |
 
 ---
 
@@ -432,6 +432,34 @@ Full commands and meanings: [PART5_NOTES.md](PART5_NOTES.md)
 
 ---
 
+## Step 11 — Monitoring: Prometheus, Grafana and CloudWatch
+
+**Prometheus** collects metrics every 15 seconds, **Grafana** draws them, and **CloudWatch** emails me through **SNS** when CPU is too high or the server fails its status check.
+
+### Steps
+
+1. App: new `/metrics` endpoint (Prometheus text format), tested in CI
+2. Terraform: `alerts.tf` (SNS topic + email, CPU > 80% alarm, status check alarm), ports 3000/9090 from my IP, `cpu_credits = "standard"`. My email is in the git-ignored `terraform.tfvars`
+3. `terraform apply` → `4 added, 2 changed, 0 destroyed`, then click **Confirm subscription** in the AWS email
+4. Ansible: `ansible-playbook site.yml` adds a 1 GB swap file and runs node_exporter, Prometheus and Grafana → `failed=0`
+5. Check: `http://<server>:9090/targets` (3× UP) and `http://<server>:3000` (Grafana, set a new admin password)
+6. Stress test from the control node: CPU 100% for 5 minutes
+
+### Result
+
+| Time | Event |
+|------|-------|
+| 00:40 | CPU 100%, Grafana status CRITICAL |
+| 00:42 | Prometheus HighCPU FIRING |
+| 00:44 | CloudWatch OK → ALARM, email received |
+| 00:46 | CloudWatch ALARM → OK, email received |
+
+Full commands, meanings and lessons: [PART6_NOTES.md](PART6_NOTES.md)
+
+![Grafana during the stress test](screenshots/28-grafana-cpu-spike.png)
+
+---
+
 ## After every session — save credits and stay safe
 
 | Action | Where | Effect |
@@ -462,6 +490,7 @@ Saved in `docs/screenshots/`. Blur IP addresses, account name and account ID bef
 | 8 | `10-…` to `13-…` | CI/CD pipeline, workflow, runner, auto-deployed version | ✅ Done |
 | 9 | `14-…` to `17-…` | Terraform code, plan, EC2 tags, dashboard | ✅ Done |
 | 10 | `18-…` to `23-…` | Ansible rule, ping, 1st/2nd/self-heal runs, dashboard | ✅ Done |
+| 11 | `24-…` to `30-…` | Alarms apply, monitoring run, Grafana, targets, CPU spike, alert, email | ✅ Done |
 
 **How to take screenshots on Windows**
 - **Win + PrtSc** → whole screen, saved automatically to `C:\Users\Samue\OneDrive\Pictures\Screenshots` (easiest)
@@ -490,9 +519,10 @@ Saved in `docs/screenshots/`. Blur IP addresses, account name and account ID bef
 - "I built CI/CD with GitHub Actions: tests on every push, then a self-hosted runner on EC2 rebuilds the container and checks `/healthz`. The runner connects outbound, so no extra port is open."
 - "I wrote the server, security group and key in Terraform, and proved it's reproducible: destroy and rebuild to a healthy dashboard in 93 seconds."
 - "I configure the server with Ansible from a control node in the same VPC, using its own SSH key and a security-group-to-security-group rule. The second run shows changed=0, so it's idempotent, and it recreates the container if someone deletes it."
+- "I monitor the server with Prometheus and Grafana, deployed by Ansible, and CloudWatch alarms from Terraform that email me through SNS. A CPU stress test turned Grafana red, fired the Prometheus alert in 2 minutes, and sent the CloudWatch ALARM and OK emails."
 
 ---
 
 ## Next steps (to be written as we complete them)
 
-- **Step 11 — Prometheus + Grafana + CloudWatch:** graphs and alerts
+- All core steps are done. Optional later: Kubernetes (minikube)
