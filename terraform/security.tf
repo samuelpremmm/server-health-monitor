@@ -29,6 +29,19 @@ resource "aws_security_group" "health_monitor" {
     cidr_blocks = [local.my_ip_cidr]
   }
 
+  # Part 5: the Ansible control node may SSH in over AWS's private network.
+  # It points at the control node's security group, not an IP, so nothing opens to the internet.
+  dynamic "ingress" {
+    for_each = var.ansible_control_sg_id == "" ? [] : [var.ansible_control_sg_id]
+    content {
+      description     = "SSH from Ansible control node"
+      from_port       = 22
+      to_port         = 22
+      protocol        = "tcp"
+      security_groups = [ingress.value]
+    }
+  }
+
   egress {
     description = "Server can reach the internet (apt, GitHub, Docker Hub)"
     from_port   = 0

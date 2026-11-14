@@ -1,0 +1,6 @@
+- name: Run the health check every {{ cron_minutes }} minutes
+  ansible.builtin.cron:
+    name: health-monitor check
+    user: "{{ app_user }}"
+    minute: "*/{{ cron_minutes }}"
+    job: "cd {{ app_dir }} && /usr/bin/python3 -m health_monitor --quiet >> {{ app_dir }}/logs/cron.log 2>&1"

@@ -23,3 +23,9 @@ variable "repo_url" {
   type        = string
   default     = "https://github.com/samuelpremmm/server-health-monitor.git"
 }
+
+variable "ansible_control_sg_id" {
+  description = "Security group of the Ansible control node (allowed to SSH in). Empty = no rule"
+  type        = string
+  default     = "sg-0334ac0734c2e43b6" # old console server: health-monitor-server
+}

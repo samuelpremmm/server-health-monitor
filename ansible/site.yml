@@ -1,0 +1,19 @@
+# Main playbook: makes the web server look exactly like this file says.
+# Run it as often as you like. If nothing needs to change, it reports changed=0.
+#   ansible-playbook site.yml
+- name: Configure the health monitor server
+  hosts: web
+  become: true            # run tasks with sudo
+  vars:
+    app_user: ubuntu
+    app_dir: /home/ubuntu/server-health-monitor
+    repo_url: https://github.com/samuelpremmm/server-health-monitor.git
+    app_port: 5000
+    cron_minutes: 5
+    timezone: Asia/Kolkata
+
+  roles:
+    - common   # updates, basic packages, timezone
+    - docker   # Docker engine
+    - app      # code + Docker image + dashboard container
+    - cron     # health check every 5 minutes

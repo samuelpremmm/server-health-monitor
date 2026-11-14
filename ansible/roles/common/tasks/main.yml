@@ -1,0 +1,17 @@
+- name: Update the apt package list (at most once an hour)
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install basic tools
+  ansible.builtin.apt:
+    name:
+      - git
+      - curl
+      - acl            # lets Ansible run tasks as the ubuntu user safely
+      - python3-docker # lets Ansible talk to Docker
+    state: present
+
+- name: Set the timezone to India
+  community.general.timezone:
+    name: "{{ timezone }}"

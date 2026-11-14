@@ -1,0 +1,18 @@
+- name: Install Docker
+  ansible.builtin.apt:
+    name:
+      - docker.io
+      - docker-buildx
+    state: present
+
+- name: Start Docker now and on every boot
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Let the ubuntu user run docker without sudo
+  ansible.builtin.user:
+    name: "{{ app_user }}"
+    groups: docker
+    append: true

@@ -1,0 +1,39 @@
+- name: Get the latest code from GitHub
+  ansible.builtin.git:
+    repo: "{{ repo_url }}"
+    dest: "{{ app_dir }}"
+    version: main
+  become_user: "{{ app_user }}"
+  register: repo
+
+- name: Build the Docker image (rebuild only when the code changed)
+  community.docker.docker_image:
+    name: health-monitor
+    tag: latest
+    source: build
+    build:
+      path: "{{ app_dir }}"
+    force_source: "{{ repo.changed }}"
+
+- name: Run the dashboard container
+  community.docker.docker_container:
+    name: health-monitor
+    image: health-monitor:latest
+    state: started
+    restart_policy: unless-stopped
+    hostname: "{{ ansible_hostname }}"
+    published_ports:
+      - "{{ app_port }}:5000"
+    volumes:
+      - /:/host:ro             # read-only view of the server's disk
+    env:
+      DISK_PATHS: /host
+      APP_VERSION: "ansible-{{ repo.after[:7] }}"   # shown in the dashboard footer
+
+- name: Wait until the dashboard answers /healthz
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ app_port }}/healthz"
+  register: health
+  until: health.status == 200
+  retries: 15
+  delay: 2
