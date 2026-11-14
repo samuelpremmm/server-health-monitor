@@ -23,8 +23,8 @@ I'm growing this project into an end-to-end DevOps pipeline, one part at a time:
 | 2 | Web dashboard, systemd service, Docker container with health check | [Part 2 notes](docs/PART2_NOTES.md) |
 | 3 | CI/CD with GitHub Actions: tests on every push, auto-deploy to EC2 | [Part 3 notes](docs/PART3_NOTES.md) |
 | 4 | Terraform: the server, firewall and key built from code | [Part 4 notes](docs/PART4_NOTES.md) |
-| 5 | Ansible: automatic server configuration | Coming next |
-| 6 | Prometheus + Grafana + CloudWatch alerts | Planned |
+| 5 | Ansible: server setup from a playbook, idempotent and self-healing | [Part 5 notes](docs/PART5_NOTES.md) |
+| 6 | Prometheus + Grafana + CloudWatch alerts | Coming next |
 
 ## Requirements
 
@@ -209,6 +209,34 @@ I tested it by destroying and rebuilding: from zero to a healthy dashboard in **
 |---|---|
 | ![EC2 tags](docs/screenshots/16-ec2-terraform-tags.png) | ![Plan](docs/screenshots/15-terraform-plan.png) |
 
+## Configuration with Ansible
+
+The [ansible/](ansible/) folder sets up the Terraform server from a playbook. Terraform creates the server; Ansible configures it.
+
+```
+control node (Ansible) ──SSH over the private network──▶ web server
+```
+
+| Role | Does |
+|---|---|
+| `common` | apt update, basic packages, timezone |
+| `docker` | installs Docker, starts it on boot |
+| `app` | pulls the code, builds the image only when the code changed, runs the container, waits for `/healthz` |
+| `cron` | health check every 5 minutes |
+
+```bash
+cd ansible
+ansible-playbook site.yml
+```
+
+- The control node uses its **own SSH key**; only its public key is on the web server.
+- The web server allows SSH from the control node's **security group**, so nothing extra is open to the internet.
+- **Idempotent:** 1st run `changed=7`, 2nd run `changed=0`. After I deleted the container, the next run recreated only that (`changed=1`).
+
+| 2nd run: nothing to change | Dashboard deployed by Ansible |
+|---|---|
+| ![Idempotent](docs/screenshots/21-ansible-idempotent.png) | ![Dashboard](docs/screenshots/23-dashboard-ansible.png) |
+
 ## Run the tests
 
 ```bash
@@ -244,10 +272,11 @@ server-health-monitor/
 ├── logs/                 reports are written here
 ├── .github/workflows/python-app.yml   CI/CD: test, then deploy to EC2
 ├── terraform/            EC2, security group, key pair as code
+├── ansible/              playbook + roles that configure the server
 ├── Dockerfile            container for the dashboard
 ├── docs/
 │   ├── HEALTH_MONITOR_SERVER.md   AWS EC2 deployment guide
-│   ├── PART2_NOTES.md … PART4_NOTES.md   notes for each part
+│   ├── PART2_NOTES.md … PART5_NOTES.md   notes for each part
 │   ├── PROJECT_DOCUMENTATION.md   design notes
 │   ├── CICD_SETUP.md              Jenkins / SonarQube / Nexus pipeline
 │   └── screenshots/
