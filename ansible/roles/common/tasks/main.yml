@@ -15,3 +15,32 @@
 - name: Set the timezone to India
   community.general.timezone:
     name: "{{ timezone }}"
+
+# The server has only 1 GB of RAM. A 1 GB swap file is a safety net for Prometheus + Grafana.
+- name: Create a 1 GB swap file (only the first time)
+  ansible.builtin.command: fallocate -l 1G /swapfile
+  args:
+    creates: /swapfile
+
+- name: Swap file permissions (root only)
+  ansible.builtin.file:
+    path: /swapfile
+    mode: "0600"
+
+- name: Format the swap file (only if it isn't swap yet)
+  ansible.builtin.shell: blkid /swapfile | grep -q 'TYPE="swap"' || mkswap /swapfile
+  register: mkswap
+  changed_when: "'Setting up swapspace' in mkswap.stdout"
+
+- name: Turn swap on now and after every reboot
+  ansible.posix.mount:
+    path: none
+    src: /swapfile
+    fstype: swap
+    opts: sw
+    state: present
+
+- name: Activate swap (only if it isn't active)
+  ansible.builtin.command: swapon /swapfile
+  when: ansible_swaptotal_mb == 0
+  changed_when: true

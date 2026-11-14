@@ -29,6 +29,22 @@ resource "aws_security_group" "health_monitor" {
     cidr_blocks = [local.my_ip_cidr]
   }
 
+  ingress {
+    description = "Grafana from my IP"
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = [local.my_ip_cidr]
+  }
+
+  ingress {
+    description = "Prometheus from my IP"
+    from_port   = 9090
+    to_port     = 9090
+    protocol    = "tcp"
+    cidr_blocks = [local.my_ip_cidr]
+  }
+
   # Part 5: the Ansible control node may SSH in over AWS's private network.
   # It points at the control node's security group, not an IP, so nothing opens to the internet.
   dynamic "ingress" {

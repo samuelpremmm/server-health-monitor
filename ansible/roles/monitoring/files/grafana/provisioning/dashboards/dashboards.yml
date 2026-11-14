@@ -1,0 +1,8 @@
+# Load every dashboard JSON file from this folder into Grafana.
+apiVersion: 1
+providers:
+  - name: health-monitor
+    folder: Server Health
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards

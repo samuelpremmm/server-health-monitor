@@ -29,3 +29,9 @@ variable "ansible_control_sg_id" {
   type        = string
   default     = "sg-0334ac0734c2e43b6" # old console server: health-monitor-server
 }
+
+variable "alert_email" {
+  description = "Email for CloudWatch alerts. Put it in terraform.tfvars (git-ignored), never in code"
+  type        = string
+  default     = ""
+}

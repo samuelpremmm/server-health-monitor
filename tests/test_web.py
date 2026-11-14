@@ -49,6 +49,22 @@ class TestWebDashboard(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body), {"status": "ok"})
 
+    def test_metrics_prometheus_format(self):
+        status, ctype, body = self.get("/metrics")
+        self.assertEqual(status, 200)
+        self.assertIn("text/plain", ctype)
+        text = body.decode()
+        self.assertIn("# TYPE health_cpu_usage_percent gauge", text)
+        self.assertIn("health_cpu_usage_percent 40.0", text)     # from the fixtures
+        self.assertIn("health_memory_usage_percent 75.0", text)
+        self.assertIn('health_load_average{period="1min"}', text)
+        self.assertIn('health_status{check="overall"}', text)
+        self.assertIn("health_disk_usage_percent{path=", text)
+        for line in text.splitlines():                           # every line is valid
+            if line and not line.startswith("#"):
+                name_labels, value = line.rsplit(" ", 1)
+                float(value)
+
     def test_unknown_path_is_404(self):
         with self.assertRaises(urllib.error.HTTPError) as ctx:
             self.get("/nope")

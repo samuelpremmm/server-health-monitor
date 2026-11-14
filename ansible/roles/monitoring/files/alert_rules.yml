@@ -1,0 +1,32 @@
+# Alerts Prometheus shows on its Alerts page (http://<server>:9090/alerts).
+# Email alerts come from AWS CloudWatch (see terraform/alerts.tf).
+groups:
+  - name: health-monitor
+    rules:
+      - alert: AppDown
+        expr: up{job="health-monitor"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "Health monitor app is not answering /metrics"
+
+      - alert: HighCPU
+        expr: health_cpu_usage_percent > 80
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "CPU above 80% for 2 minutes ({{ $value }}%)"
+
+      - alert: HighMemory
+        expr: health_memory_usage_percent > 85
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Memory above 85% for 5 minutes ({{ $value }}%)"
+
+      - alert: DiskAlmostFull
+        expr: health_disk_usage_percent > 85
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Disk {{ $labels.path }} above 85%"

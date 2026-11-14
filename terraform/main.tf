@@ -34,6 +34,11 @@ resource "aws_instance" "health_monitor" {
     encrypted   = true # disk is encrypted at rest
   }
 
+  # "standard" = never pay extra when the CPU runs hot (t3 default "unlimited" can cost money)
+  credit_specification {
+    cpu_credits = "standard"
+  }
+
   metadata_options {
     http_tokens = "required" # IMDSv2 only (AWS security best practice)
   }

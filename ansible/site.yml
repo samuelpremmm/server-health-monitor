@@ -11,9 +11,14 @@
     app_port: 5000
     cron_minutes: 5
     timezone: Asia/Kolkata
+    monitoring_dir: /opt/monitoring
+    prometheus_version: v2.54.1
+    grafana_version: 11.2.0
+    node_exporter_version: v1.8.2
 
   roles:
     - common   # updates, basic packages, timezone
     - docker   # Docker engine
     - app      # code + Docker image + dashboard container
     - cron     # health check every 5 minutes
+    - monitoring  # Prometheus + Grafana + node_exporter

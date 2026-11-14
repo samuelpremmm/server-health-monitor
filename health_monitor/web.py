@@ -8,6 +8,7 @@ Routes:
     /             dashboard page (refreshes itself every few seconds)
     /api/health   the full report as JSON
     /healthz      tiny "is the app alive?" check for Docker / load balancers
+    /metrics      the same numbers in Prometheus text format (for Prometheus + Grafana)
 """
 
 import argparse
@@ -71,6 +72,59 @@ class CachedCollector:
             return self._value
 
 
+STATUS_VALUE = {report.OK: 0, report.WARNING: 1, report.CRITICAL: 2}
+
+
+def _label(value):
+    """Escape a Prometheus label value."""
+    return str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
+def prometheus_metrics(rep):
+    """Turn a report into Prometheus text format (one metric per line).
+
+    Status values: 0 = OK, 1 = WARNING, 2 = CRITICAL.
+    """
+    out = []
+
+    def metric(name, help_text, samples, kind="gauge"):
+        out.append(f"# HELP {name} {help_text}")
+        out.append(f"# TYPE {name} {kind}")
+        for labels, value in samples:
+            lbl = ",".join(f'{k}="{_label(v)}"' for k, v in labels.items())
+            out.append(f"{name}{{{lbl}}} {value}" if lbl else f"{name} {value}")
+
+    c, m, s = rep["cpu"], rep["memory"], rep["system"]
+    ok_disks = [d for d in rep["disks"] if "error" not in d]
+
+    metric("health_monitor_info", "Version and host of the running health monitor",
+           [({"version": os.environ.get("APP_VERSION", "dev"),
+              "hostname": s.get("hostname", "")}, 1)])
+    metric("health_status", "Health status per check (0=OK, 1=WARNING, 2=CRITICAL)",
+           [({"check": "overall"}, STATUS_VALUE[rep["overall_status"]]),
+            ({"check": "cpu"}, STATUS_VALUE[c["status"]]),
+            ({"check": "memory"}, STATUS_VALUE[m["status"]])]
+           + [({"check": "disk", "path": d["path"]}, STATUS_VALUE[d["status"]])
+              for d in rep["disks"]])
+    metric("health_cpu_usage_percent", "CPU usage in percent", [({}, c["usage_percent"])])
+    metric("health_cpu_cores", "Number of CPU cores", [({}, c["cores"])])
+    metric("health_load_average", "Load average",
+           [({"period": p}, c["load_average"][p]) for p in ("1min", "5min", "15min")])
+    metric("health_memory_usage_percent", "Memory usage in percent", [({}, m["usage_percent"])])
+    metric("health_memory_used_bytes", "Memory used in bytes", [({}, m["used"])])
+    metric("health_memory_total_bytes", "Total memory in bytes", [({}, m["total"])])
+    metric("health_swap_usage_percent", "Swap usage in percent", [({}, m["swap_percent"])])
+    metric("health_disk_usage_percent", "Disk usage in percent",
+           [({"path": d["path"]}, d["usage_percent"]) for d in ok_disks])
+    metric("health_disk_used_bytes", "Disk space used in bytes",
+           [({"path": d["path"]}, d["used"]) for d in ok_disks])
+    metric("health_disk_total_bytes", "Disk size in bytes",
+           [({"path": d["path"]}, d["total"]) for d in ok_disks])
+    if "uptime_seconds" in s:
+        metric("health_uptime_seconds", "Server uptime in seconds", [({}, s["uptime_seconds"])])
+    return "\n".join(out) + "\n"
+
+
 def make_handler(collector):
     class Handler(BaseHTTPRequestHandler):
         server_version = f"health-monitor/{__version__}"
@@ -89,6 +143,13 @@ def make_handler(collector):
                                json.dumps({"error": str(exc)}).encode())
                     return
                 self._send(200, "application/json", body)
+            elif path == "/metrics":
+                try:
+                    body = prometheus_metrics(collector()).encode()
+                except Exception as exc:
+                    self._send(500, "text/plain; charset=utf-8", f"# error: {exc}\n".encode())
+                    return
+                self._send(200, "text/plain; version=0.0.4; charset=utf-8", body)
             elif path == "/healthz":
                 self._send(200, "application/json", b'{"status": "ok"}')
             else:
@@ -217,7 +278,7 @@ DASHBOARD_HTML = """<!doctype html>
     </section>
   </div>
   <footer class="sub" style="margin-top:20px;text-align:center">
-    🚀 Deployed automatically by GitHub Actions · version __APP_VERSION__
+    🚀 Deployed automatically · version __APP_VERSION__
   </footer>
 </main>
 <script>

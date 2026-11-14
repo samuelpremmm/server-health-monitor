@@ -1,0 +1,104 @@
+# Prometheus + Grafana + node_exporter, all as Docker containers.
+- name: Create folders for the monitoring config
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ monitoring_dir }}"
+    - "{{ monitoring_dir }}/grafana/provisioning/datasources"
+    - "{{ monitoring_dir }}/grafana/provisioning/dashboards"
+    - "{{ monitoring_dir }}/grafana/dashboards"
+
+- name: Copy Prometheus config and alert rules
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ monitoring_dir }}/{{ item }}"
+    mode: "0644"
+  loop:
+    - prometheus.yml
+    - alert_rules.yml
+  register: prometheus_config
+
+- name: Copy Grafana data source, dashboard settings and dashboard
+  ansible.builtin.copy:
+    src: "grafana/{{ item }}"
+    dest: "{{ monitoring_dir }}/grafana/{{ item }}"
+    mode: "0644"
+  loop:
+    - provisioning/datasources/prometheus.yml
+    - provisioning/dashboards/dashboards.yml
+    - dashboards/health.json
+  register: grafana_config
+
+- name: Create a private Docker network for Prometheus and Grafana
+  community.docker.docker_network:
+    name: monitoring
+
+- name: Run node_exporter (Linux server metrics on port 9100)
+  community.docker.docker_container:
+    name: node-exporter
+    image: "prom/node-exporter:{{ node_exporter_version }}"
+    state: started
+    restart_policy: unless-stopped
+    network_mode: host          # sees the real network cards
+    pid_mode: host              # sees the real processes
+    volumes:
+      - /:/host:ro,rslave
+    command: ["--path.rootfs=/host"]
+
+- name: Run Prometheus (port 9090)
+  community.docker.docker_container:
+    name: prometheus
+    image: "prom/prometheus:{{ prometheus_version }}"
+    state: started
+    restart: "{{ prometheus_config.changed }}"   # reload when the config changed
+    restart_policy: unless-stopped
+    networks:
+      - name: monitoring
+    published_ports:
+      - "9090:9090"
+    etc_hosts:
+      host.docker.internal: host-gateway       # lets Prometheus reach ports on the server
+    volumes:
+      - "{{ monitoring_dir }}/prometheus.yml:/etc/prometheus/prometheus.yml:ro"
+      - "{{ monitoring_dir }}/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro"
+      - prometheus-data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d       # small disk: keep one week
+      - --storage.tsdb.retention.size=1GB
+    memory: 300m
+
+- name: Run Grafana (port 3000)
+  community.docker.docker_container:
+    name: grafana
+    image: "grafana/grafana-oss:{{ grafana_version }}"
+    state: started
+    restart: "{{ grafana_config.changed }}"
+    restart_policy: unless-stopped
+    networks:
+      - name: monitoring
+    published_ports:
+      - "3000:3000"
+    env:
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/health.json
+    volumes:
+      - "{{ monitoring_dir }}/grafana/provisioning:/etc/grafana/provisioning:ro"
+      - "{{ monitoring_dir }}/grafana/dashboards:/var/lib/grafana/dashboards:ro"
+      - grafana-data:/var/lib/grafana
+    memory: 300m
+
+- name: Wait until Prometheus and Grafana answer
+  ansible.builtin.uri:
+    url: "{{ item }}"
+  register: monitoring_health
+  until: monitoring_health.status == 200
+  retries: 20
+  delay: 3
+  loop:
+    - http://127.0.0.1:9090/-/ready
+    - http://127.0.0.1:3000/api/health

@@ -12,3 +12,11 @@ output "dashboard_url" {
 output "ssh_command" {
   value = "ssh -i ~/.ssh/health-monitor-tf ubuntu@${aws_instance.health_monitor.public_ip}"
 }
+
+output "grafana_url" {
+  value = "http://${aws_instance.health_monitor.public_ip}:3000"
+}
+
+output "prometheus_url" {
+  value = "http://${aws_instance.health_monitor.public_ip}:9090"
+}
