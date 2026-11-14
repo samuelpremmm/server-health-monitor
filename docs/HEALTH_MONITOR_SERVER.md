@@ -1,7 +1,7 @@
 # HEALTH MONITOR SERVER
 
 > **Status: DRAFT** — this document grows as we finish each step of the project.
-> Last updated: 13 Nov 2026
+> Last updated: 14 Nov 2026
 
 A step-by-step record of deploying my **Linux Server Health Monitor** (a Python tool that checks CPU, RAM, disk and system info) on a real **AWS EC2** server, written in simple words so I can re-read it any time and explain it in interviews.
 
@@ -19,9 +19,10 @@ A step-by-step record of deploying my **Linux Server Health Monitor** (a Python 
 | 5 | Web dashboard on port 5000 | ✅ Done |
 | 6 | Run the dashboard 24/7 with systemd | ✅ Done |
 | 7 | Docker | ✅ Done |
-| 8 | CI/CD: auto deploy to EC2 on `git push` | ⏳ Next |
-| 9 | Terraform (create AWS servers with code) | ⬜ Planned |
-| 10 | Monitoring with Prometheus + Grafana | ⬜ Planned |
+| 8 | CI/CD: auto deploy to EC2 on `git push` | ✅ Done |
+| 9 | Terraform (create AWS servers with code) | ✅ Done |
+| 10 | Ansible (set up the server with code) | ✅ Done |
+| 11 | Monitoring with Prometheus + Grafana + CloudWatch | ⏳ Next |
 
 ---
 
@@ -38,6 +39,14 @@ EC2 t3.micro — Ubuntu 24.04 — Mumbai (ap-south-1)
             ├── checks CPU / RAM / Disk / System info
             ├── runs automatically every 5 min (cron)
             └── saves reports → logs/health_report.log
+```
+
+**Today (after Steps 8–10):**
+
+```
+git push ──▶ GitHub Actions: tests ──▶ self-hosted runner on EC2 ──▶ new container
+Terraform ──▶ creates the EC2 server, security group and SSH key
+Ansible (control node) ──SSH, private network──▶ sets up Docker, the app and cron
 ```
 
 **Project code:** https://github.com/samuelpremmm/server-health-monitor
@@ -335,6 +344,94 @@ Inside a container, `/proc/stat` and `/proc/meminfo` already show the **host's**
 
 ---
 
+## Step 8 — CI/CD: auto deploy on every `git push`
+
+**CI/CD** = every push is tested automatically (CI) and, if the tests pass, deployed automatically (CD).
+
+```
+git push → build (flake8 + pytest on GitHub) → deploy (self-hosted runner on EC2) → /healthz check
+```
+
+- The workflow file is `.github/workflows/python-app.yml`.
+- A **self-hosted runner** is installed on the EC2 server as a systemd service. It connects **outbound** to GitHub, so no extra port is opened.
+- The deploy job rebuilds the image, replaces the container and checks `/healthz`. If the tests fail, nothing is deployed.
+- The dashboard footer shows the deployed commit (`APP_VERSION`).
+
+Full commands, errors and fixes: [PART3_NOTES.md](PART3_NOTES.md)
+
+![Pipeline run](screenshots/10-pipeline-run.png)
+
+---
+
+## Step 9 — Terraform: create the server with code
+
+**Terraform** = writes the server, firewall and key as code (`terraform/` folder), so they can be rebuilt any time.
+
+| Command | Simple explanation |
+|---------|--------------------|
+| `terraform init` | Download the AWS plugin |
+| `terraform plan` | Preview what will change (nothing is created yet) |
+| `terraform apply` | Create it |
+| `terraform destroy` | Delete it all |
+
+- EC2 t3.micro, Ubuntu 24.04, 8 GB encrypted disk, IMDSv2
+- Security group finds **my IP automatically** and allows 22 and 5000 only from it (`/32`)
+- `user_data.sh` installs Docker and starts the dashboard on first boot
+- Destroy and rebuild test: zero to a healthy dashboard in **93 seconds**
+- The state file (`terraform.tfstate`) is never pushed to GitHub
+
+Full commands, errors and fixes: [PART4_NOTES.md](PART4_NOTES.md)
+
+![Terraform plan](screenshots/15-terraform-plan.png)
+
+---
+
+## Step 10 — Ansible: set up the server with code
+
+**Ansible** = connects over SSH and makes the server match a playbook. Terraform **creates** the server; Ansible **sets it up**.
+
+```
+Control node (old console server, runs Ansible)
+      │  SSH on port 22, private IP — allowed only from the control node's security group
+      ▼
+Terraform server (managed node)
+```
+
+### Steps
+
+1. Terraform: add an SSH rule **from the control node's security group** (`plan`: 0 to add, 1 to change, 0 to destroy)
+2. On the control node: `sudo apt update && sudo apt install -y ansible`
+3. Make a key just for Ansible: `ssh-keygen -t ed25519 -f ~/.ssh/ansible_key -N "" -C "ansible-control-node"`. Only the **public** key is added to the Terraform server's `~/.ssh/authorized_keys`
+4. Test: `ansible all -i 172.31.3.0, -u ubuntu --private-key ~/.ssh/ansible_key -m ping` → `"ping": "pong"`
+5. Run the playbook: `cd ~/server-health-monitor && git pull && cd ansible && ansible-playbook site.yml`
+
+### The `ansible/` folder
+
+| File | Simple explanation |
+|------|--------------------|
+| `inventory.ini` | The list of servers (Terraform server's private IP) |
+| `site.yml` | The playbook: apply 4 roles with sudo |
+| `roles/common` | apt update, basic packages, timezone |
+| `roles/docker` | Install and start Docker |
+| `roles/app` | Pull code, build image (only if the code changed), run container, check `/healthz` |
+| `roles/cron` | Health check every 5 minutes |
+
+### Result
+
+| Run | PLAY RECAP | Meaning |
+|-----|------------|---------|
+| 1st | `changed=7` | Set up the whole server |
+| 2nd | `changed=0` | **Idempotent**: nothing to change |
+| After `docker rm -f health-monitor` | `changed=1` | **Self-healing**: recreated only the container |
+
+The dashboard footer shows `version ansible-73f524d`. ✅
+
+Full commands and meanings: [PART5_NOTES.md](PART5_NOTES.md)
+
+![Ansible second run: changed=0](screenshots/21-ansible-idempotent.png)
+
+---
+
 ## After every session — save credits and stay safe
 
 | Action | Where | Effect |
@@ -362,6 +459,9 @@ Saved in `docs/screenshots/`. Blur IP addresses, account name and account ID bef
 | 5 | `07-dashboard.png` | Web dashboard in the browser (address bar cropped out) | ✅ Done |
 | 6 | `08-systemd-service.png` | `systemctl status`: active (running), enabled | ✅ Done |
 | 7 | `09-docker-ps.png` | `docker run` + `docker ps` showing `(healthy)` | ✅ Done |
+| 8 | `10-…` to `13-…` | CI/CD pipeline, workflow, runner, auto-deployed version | ✅ Done |
+| 9 | `14-…` to `17-…` | Terraform code, plan, EC2 tags, dashboard | ✅ Done |
+| 10 | `18-…` to `23-…` | Ansible rule, ping, 1st/2nd/self-heal runs, dashboard | ✅ Done |
 
 **How to take screenshots on Windows**
 - **Win + PrtSc** → whole screen, saved automatically to `C:\Users\Samue\OneDrive\Pictures\Screenshots` (easiest)
@@ -387,11 +487,12 @@ Saved in `docs/screenshots/`. Blur IP addresses, account name and account ID bef
 - "I added a web dashboard and JSON API with a `/healthz` endpoint, and ran it as a systemd service so it survives reboots and crashes."
 - "I containerized it with Docker: a slim Python image, non-root user, a HEALTHCHECK, `--restart unless-stopped`, and a read-only host mount so the container reports the server's real disk."
 - "I debugged the Docker socket `permission denied` error by checking `groups` and adding my user to the docker group."
+- "I built CI/CD with GitHub Actions: tests on every push, then a self-hosted runner on EC2 rebuilds the container and checks `/healthz`. The runner connects outbound, so no extra port is open."
+- "I wrote the server, security group and key in Terraform, and proved it's reproducible: destroy and rebuild to a healthy dashboard in 93 seconds."
+- "I configure the server with Ansible from a control node in the same VPC, using its own SSH key and a security-group-to-security-group rule. The second run shows changed=0, so it's idempotent, and it recreates the container if someone deletes it."
 
 ---
 
 ## Next steps (to be written as we complete them)
 
-- **Step 8 — CI/CD:** auto test and deploy to EC2 on every `git push`
-- **Step 9 — Terraform:** create the EC2 server and security group from code
-- **Step 10 — Prometheus + Grafana:** graphs and alerts
+- **Step 11 — Prometheus + Grafana + CloudWatch:** graphs and alerts
